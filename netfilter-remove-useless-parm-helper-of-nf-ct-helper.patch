@@ -1,0 +1,68 @@
+From 7685ce31cf5460b086e37690ab1ed99bf5950f36 Mon Sep 17 00:00:00 2001
+From: Gao Feng <gfree.wind@vip.163.com>
+Date: Fri, 10 May 2019 12:30:13 -0700
+Subject: [PATCH] netfilter: Remove useless param helper of
+ nf_ct_helper_ext_add
+
+Upstream commit:
+    commit 440534d3c56be04abfb26850ee882d19d223557a
+    Author: Gao Feng <gfree.wind@vip.163.com>
+    Date:   Mon Jul 9 18:06:33 2018 +0800
+
+    netfilter: Remove useless param helper of nf_ct_helper_ext_add
+
+    The param helper of nf_ct_helper_ext_add is useless now, then remove
+    it now.
+
+    Signed-off-by: Gao Feng <gfree.wind@vip.163.com>
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+This patch backports the above upstream patch to OVS.
+
+Cc: Gao Feng <gfree.wind@vip.163.com>
+Tested-by: Greg Rose <gvrose8192@gmail.com>
+Reviewed-by: Greg Rose <gvrose8192@gmail.com>
+Acked-by: Yi-Hung Wei <yihung.wei@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ acinclude.m4                                                   |  3 +++
+ .../linux/compat/include/net/netfilter/nf_conntrack_helper.h   | 10 ++++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/acinclude.m4 b/acinclude.m4
+index f16c1da..da198f4 100644
+--- a/acinclude.m4
++++ b/acinclude.m4
+@@ -954,6 +954,9 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
+                   [OVS_DEFINE([HAVE_NF_CONNTRACK_L3PROATO_H])])
+   OVS_GREP_IFELSE([$KSRC/include/net/ipv6_frag.h], [IP6_DEFRAG_CONNTRACK_IN],
+                   [OVS_DEFINE([HAVE_IPV6_FRAG_H])])
++  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_helper.h],
++                        [nf_ct_helper_ext_add], [nf_conntrack_helper],
++                        [OVS_DEFINE([HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER])])
+ 
+   if cmp -s datapath/linux/kcompat.h.new \
+             datapath/linux/kcompat.h >/dev/null 2>&1; then
+diff --git a/datapath/linux/compat/include/net/netfilter/nf_conntrack_helper.h b/datapath/linux/compat/include/net/netfilter/nf_conntrack_helper.h
+index 19c35cd..b6a3d0b 100644
+--- a/datapath/linux/compat/include/net/netfilter/nf_conntrack_helper.h
++++ b/datapath/linux/compat/include/net/netfilter/nf_conntrack_helper.h
+@@ -9,4 +9,14 @@ static inline void nf_conntrack_helper_put(struct nf_conntrack_helper *helper) {
+ }
+ #endif
+ 
++#ifndef HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER
++static inline struct nf_conn_help *
++rpl_nf_ct_helper_ext_add(struct nf_conn *ct,
++			 struct nf_conntrack_helper *helper, gfp_t gfp)
++{
++	return nf_ct_helper_ext_add(ct, gfp);
++}
++#define nf_ct_helper_ext_add rpl_nf_ct_helper_ext_add
++#endif /* HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER */
++
+ #endif /* _NF_CONNTRACK_HELPER_WRAPPER_H */
+-- 
+2.14.1.windows.1
+

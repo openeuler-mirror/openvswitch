@@ -1,0 +1,74 @@
+From d58b59c17c70137aebdde37d3c01c26a26b28519 Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Fri, 10 May 2019 12:30:14 -0700
+Subject: [PATCH] datapath: Support kernel version 4.19.x and 4.20.x
+
+This patch updated acinclude.m4 so that OVS can be compiled on 4.19.x
+and 4.20.x kernels.
+This patch also updated travis files so that latest kernel versions
+are used during travis test builds.
+
+Tested-by: Greg Rose <gvrose8192@gmail.com>
+Reviewed-by: Greg Rose <gvrose8192@gmail.com>
+Acked-by: Yi-Hung Wei <yihung.wei@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ .travis.yml  | 18 ++++++++++--------
+ acinclude.m4 |  4 ++--
+ 2 files changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/.travis.yml b/.travis.yml
+index 15c085d..765692f 100644
+--- a/.travis.yml
++++ b/.travis.yml
+@@ -31,19 +31,21 @@ env:
+   - TESTSUITE=1 KERNEL=3.16.54
+   - TESTSUITE=1 OPTS="--enable-shared"
+   - BUILD_ENV="-m32" OPTS="--disable-ssl"
+-  - KERNEL=3.16.54 DPDK=1
+-  - KERNEL=3.16.54 DPDK=1 OPTS="--enable-shared"
+-  - KERNEL=3.16.54 DPDK_SHARED=1
+-  - KERNEL=3.16.54 DPDK_SHARED=1 OPTS="--enable-shared"
++  - KERNEL=3.16.65 DPDK=1 OPTS="--enable-shared"
++  - KERNEL=3.16.65 TESTSUITE=1 DPDK=1
++  - KERNEL=3.16.65 DPDK_SHARED=1
++  - KERNEL=3.16.65 DPDK_SHARED=1 OPTS="--enable-shared"
++  - KERNEL=4.20.17
++  - KERNEL=4.19.37
+   - KERNEL=4.18.20
+   - KERNEL=4.17.19
+   - KERNEL=4.16.18
+   - KERNEL=4.15.18
+-  - KERNEL=4.14.63
+-  - KERNEL=4.9.149
+-  - KERNEL=4.4.148
++  - KERNEL=4.14.114
++  - KERNEL=4.9.171
++  - KERNEL=4.4.179
+   - KERNEL=3.19.8
+-  - KERNEL=3.16.57
++  - KERNEL=3.16.65
+   - TESTSUITE=1 LIBS=-ljemalloc
+ 
+ matrix:
+diff --git a/acinclude.m4 b/acinclude.m4
+index 9d6b682..6c8f970 100644
+--- a/acinclude.m4
++++ b/acinclude.m4
+@@ -151,10 +151,10 @@ AC_DEFUN([OVS_CHECK_LINUX], [
+     AC_MSG_RESULT([$kversion])
+ 
+     if test "$version" -ge 4; then
+-       if test "$version" = 4 && test "$patchlevel" -le 18; then
++       if test "$version" = 4 && test "$patchlevel" -le 20; then
+           : # Linux 4.x
+        else
+-          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.18.x is not supported (please refer to the FAQ for advice)])
++          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.20.x is not supported (please refer to the FAQ for advice)])
+        fi
+     elif test "$version" = 3 && test "$patchlevel" -ge 10; then
+        : # Linux 3.x
+-- 
+2.14.1
+

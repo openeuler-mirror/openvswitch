@@ -1,0 +1,71 @@
+From 340aa575edb1c2eb993b0c5f46753a9aed4a02aa Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Fri, 10 May 2019 12:30:11 -0700
+Subject: [PATCH] datapath: Fix conntrack_count related compilation errors
+
+This patch fixes the compilation errors of OVS on 4.19+ kernels.
+
+Tested-by: Greg Rose <gvrose8192@gmail.com>
+Reviewed-by: Greg Rose <gvrose8192@gmail.com>
+Acked-by: Yi-Hung Wei <yihung.wei@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ datapath/linux/compat/include/net/netfilter/nf_conntrack_count.h | 4 ++--
+ datapath/linux/compat/nf_conncount.c                             | 6 +++++-
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/datapath/linux/compat/include/net/netfilter/nf_conntrack_count.h b/datapath/linux/compat/include/net/netfilter/nf_conntrack_count.h
+index fd536f3..6140173 100644
+--- a/datapath/linux/compat/include/net/netfilter/nf_conntrack_count.h
++++ b/datapath/linux/compat/include/net/netfilter/nf_conntrack_count.h
+@@ -2,6 +2,8 @@
+ #define _NF_CONNTRACK_COUNT_WRAPPER_H
+ 
+ #include <linux/list.h>
++#include <net/netfilter/nf_conntrack_tuple.h>
++#include <net/netfilter/nf_conntrack_zones.h>
+ 
+ #ifdef HAVE_UPSTREAM_NF_CONNCOUNT
+ #include_next <net/netfilter/nf_conntrack_count.h>
+@@ -16,8 +18,6 @@ static inline void rpl_nf_conncount_modexit(void)
+ }
+ 
+ #else
+-#include <net/netfilter/nf_conntrack_tuple.h>
+-#include <net/netfilter/nf_conntrack_zones.h>
+ #define CONFIG_NETFILTER_CONNCOUNT 1
+ struct nf_conncount_data;
+ 
+diff --git a/datapath/linux/compat/nf_conncount.c b/datapath/linux/compat/nf_conncount.c
+index 0bee962..4338458 100644
+--- a/datapath/linux/compat/nf_conncount.c
++++ b/datapath/linux/compat/nf_conncount.c
+@@ -13,6 +13,8 @@
+  *		only ignore TIME_WAIT or gone connections
+  *   (C) CC Computer Consultants GmbH, 2007
+  */
++ #ifndef HAVE_UPSTREAM_NF_CONNCOUNT
++ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/in.h>
+ #include <linux/in6.h>
+@@ -138,7 +140,7 @@ static bool conn_free(struct nf_conncount_list *list,
+ 
+ 	if (list->count == 0) {
+ 		spin_unlock(&list->list_lock);
+-                return free_entry;
++		return free_entry;
+ 	}
+ 
+ 	list->count--;
+@@ -635,3 +637,5 @@ void rpl_nf_conncount_modexit(void)
+ 	kmem_cache_destroy(conncount_conn_cachep);
+ 	kmem_cache_destroy(conncount_rb_cachep);
+ }
++
++#endif /* HAVE_UPSTREAM_NF_CONNCOUNT */
+\ No newline at end of file
+-- 
+2.14.1
+
