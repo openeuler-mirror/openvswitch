@@ -1,72 +1,42 @@
-# Generated automatically -- do not modify!    -*- buffer-read-only: t -*-
-# Spec file for Open vSwitch.
+# Spec file for Open vSwitch kernel modules on openEuler version.
 
-# Copyright (C) 2009, 2010, 2015, 2018 Nicira Networks, Inc.
+# Copyright (C) 2011, 2012, 2018 Nicira, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
 # notice and this notice are preserved.  This file is offered as-is,
 # without warranty of any kind.
 
-%global debug_package %{nil}
+#needsrootforbuild
 
-# Use the kversion macro such as
-# RPMBUILD_OPT='-D "kversion 3.10.0-693.1.1.el7.x86_64 3.10.0-693.17.1.el7.x86_64"'
-# to build package for mulitple kernel versions in the same package
-# This only works for kernel 3.10.0 major revision 693 (RHEL 7.4)
-# and major revision 327 (RHEL 7.2)
-# By default, build against the current running kernel version
-#%define kernel 3.1.5-1.fc16.x86_64
-#define kernel %{kernel_source}
 %define kversion        $(uname -r)
 %{?kversion:%define kernel %kversion}
 
-#needsrootforbuild
-
 Name: openvswitch-kmod
+Version: 2.12.0
+Release: 1
 Summary: Open vSwitch Kernel Modules
-Group: System Environment/Daemons
-URL: http://www.openvswitch.org/
-Vendor: OpenSource Security Ralf Spenneberg <ralf@os-s.net>
-Version: 2.11.1
-
-# The entire source code is ASL 2.0 except datapath/ which is GPLv2
 License: GPLv2
-Release: 1%{?dist}
+URL: http://www.openvswitch.org/
 Source: openvswitch-%{version}.tar.gz
-Patch0: datapath-support-kernel-version-4-19-and-4-20.patch
-Patch1: datapath-handle-removal-of-.h-file-nf-conntrack-l3proto.patch
-Patch2: ovs-use-nf-ct-get-tuplepr-invert-tuplepr.patch
-Patch3: datapath-fix-conntrack-count-related-compiliation-error.patch
-Patch4: datatpath-use-new-header-file-net-ipv6-frag-h.patch
-Patch5: netfilter-remove-useless-parm-helper-of-nf-ct-helper.patch
 
 #Source1: openvswitch-init
 Buildroot: /tmp/openvswitch-xen-rpm
 Provides: kmod-openvswitch
 Conflicts: kmod-openvswitch
 
-Requires: logrotate, hostname, python >= 2.7, python-six
 BuildRequires: python-six
 BuildRequires: openssl-devel
 BuildRequires: checkpolicy, selinux-policy-devel
 BuildRequires: autoconf, automake, libtool
 BuildRequires: python-sphinx
 BuildRequires:  kernel kernel-devel
-
+%undefine _enable_debug_packages
 %description
-Open vSwitch provides standard network bridging functions augmented with
-support for the OpenFlow protocol for remote per-flow control of
-traffic. This package contains the kernel modules.
+Open vSwitch Linux kernel module
 
 %prep
 %setup -q -n openvswitch-%{version}
-%patch0 -p1
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
-%patch5 -p1
 
 %build
 sh boot.sh
@@ -100,40 +70,28 @@ for kv in %{kversion}; do
 done
 install -d -m 0755 $RPM_BUILD_ROOT/usr/share/openvswitch/scripts
 install -p -m 0755 rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh \
-    $RPM_BUILD_ROOT%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
+    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovs-kmod-manage.sh
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %post
 current_kernel=$(uname -r)
-IFS='.\|-' read mainline_major mainline_minor mainline_patch major_rev \
-    minor_rev _extra <<<"${current_kernel}"
-# echo mainline_major=$mainline_major mainline_minor=$mainline_minor \
-# mainline_patch=$mainline_patch major_rev=$major_rev minor_rev=$minor_rev
-if [ "$mainline_major" = "3" ] && [ "$mainline_minor" = "10" ]; then
-    if [ "$major_rev" = "327" ] || [ "$major_rev" = "693" ]; then
-        # For RHEL 7.2 and 7.4
-        if [ -x "%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh" ]; then
-            %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
-        fi
+IFS=. read installed_major installed_minor installed_micro installed_arch \
+    installed_build <<<"${current_kernel##*-}"
+if [ "$installed_major" = "327" ] || [ "$installed_major" = "693" ]; then
+    # Workaround for RHEL 7.2 and 7.4
+    if [ -x "/usr/share/%{oname}/scripts/ovs-kmod-manage.sh" ]; then
+        /usr/share/%{oname}/scripts/ovs-kmod-manage.sh
     fi
-elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "4" ] && \
-     [ "$mainline_patch" -ge "73" ]; then
-     # For SLES 12 SP3
-     if [ -x "%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh" ]; then
-         %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
-     fi
 else
     # Ensure that modprobe will find our modules.
     for k in $(cd /lib/modules && /bin/ls); do
         [ -d "/lib/modules/$k/kernel/" ] && /sbin/depmod -a "$k"
     done
     if [ -x "/sbin/weak-modules" ]; then
-        for m in openvswitch vport-gre vport-stt vport-geneve \
-                 vport-lisp vport-vxlan; do
-            echo "/lib/modules/%{kernel}/extra/openvswitch/$m.ko"
-        done | /sbin/weak-modules --add-modules
+        rpm -ql kmod-%{oname} | grep '\.ko$' | \
+            /sbin/weak-modules --add-modules
     fi
 fi
 
@@ -148,13 +106,10 @@ fi
 
 %files
 %defattr(0644,root,root)
-/lib/modules/*/extra/openvswitch/*.ko
+/lib/modules/
 /etc/depmod.d/kmod-openvswitch.conf
-%exclude /lib/modules/*/modules.*
-%attr(755,root,root) %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
+%attr(755,root,root) /usr/share/openvswitch/scripts/ovs-kmod-manage.sh
 
 %changelog
-* Wed Sep 21 2011 Kyle Mestery <kmestery@cisco.com>
-- Updated for F15
-* Wed Jan 12 2011 Ralf Spenneberg <ralf@os-s.net>
-- First build on F14
+* Fri Nov 22 2019 openEuler Buildteam <buildteam@openeuler.org> - 2.12.0
+- First build 
