@@ -1,0 +1,37 @@
+From e3d50e225545b6307aa7157fd5740bfdc040223e Mon Sep 17 00:00:00 2001
+From: Ilya Maximets <i.maximets@ovn.org>
+Date: Wed, 9 Oct 2019 16:17:58 +0200
+Subject: netdev-afxdp: Fix umem creation failure due to uninitialized config.
+
+Later version of 'struct xsk_umem_config' contains additional field
+'flags'.  OVS doesn't use that field passing uninitialized stack
+memory to the 'xsk_umem__create()' call that could fail with
+'Invalid argument' if 'flags' are non-zero or, even worse, create
+umem with unexpected properties.
+
+We need to clear the whole structure explicitly to avoid this kind
+of issues.
+
+Fixes: 0de1b425962d ("netdev-afxdp: add new netdev type for AF_XDP.")
+Signed-off-by: Ilya Maximets <i.maximets@ovn.org>
+Signed-off-by: William Tu <u9012063@gmail.com>
+---
+ lib/netdev-afxdp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/lib/netdev-afxdp.c b/lib/netdev-afxdp.c
+index 6486c8233..47b4af59d 100644
+--- a/lib/netdev-afxdp.c
++++ b/lib/netdev-afxdp.c
+@@ -168,6 +168,7 @@ xsk_configure_umem(void *buffer, uint64_t size, int xdpmode)
+ 
+     umem = xzalloc(sizeof *umem);
+ 
++    memset(&uconfig, 0, sizeof uconfig);
+     uconfig.fill_size = PROD_NUM_DESCS;
+     uconfig.comp_size = CONS_NUM_DESCS;
+     uconfig.frame_size = FRAME_SIZE;
+-- 
+2.14.1
+
+

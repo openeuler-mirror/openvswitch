@@ -1,0 +1,33 @@
+From 3c22f70994279bc206a78d9a1f40702beb9864d1 Mon Sep 17 00:00:00 2001
+From: Yanqin Wei <Yanqin.Wei@arm.com>
+Date: Mon, 2 Sep 2019 16:36:47 +0800
+Subject: flow: fix incorrect padding length checking in ipv6_sanity_check
+
+The padding length is (packet size - ipv6 header length - ipv6 plen).  This
+patch fixes incorrect padding size checking in ipv6_sanity_check.
+
+Acked-by: William Tu <u9012063@gmail.com>
+Reviewed-by: Gavin Hu <Gavin.Hu@arm.com>
+Signed-off-by: Yanqin Wei <Yanqin.Wei@arm.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ lib/flow.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/flow.c b/lib/flow.c
+index e54fd2e52..db84b01f2 100644
+--- a/lib/flow.c
++++ b/lib/flow.c
+@@ -699,7 +699,7 @@ ipv6_sanity_check(const struct ovs_16aligned_ip6_hdr *nh, size_t size)
+         return false;
+     }
+     /* Jumbo Payload option not supported yet. */
+-    if (OVS_UNLIKELY(size - plen > UINT8_MAX)) {
++    if (OVS_UNLIKELY(size - (plen + IPV6_HEADER_LEN) > UINT8_MAX)) {
+         return false;
+     }
+ 
+-- 
+2.14.1
+
+

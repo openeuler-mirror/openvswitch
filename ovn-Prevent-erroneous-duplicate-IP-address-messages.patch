@@ -1,0 +1,54 @@
+From 30227d3b6f82381c3bf0ffa6e988a0799c0682f4 Mon Sep 17 00:00:00 2001
+From: Mark Michelson <mmichels@redhat.com>
+Date: Tue, 12 Nov 2019 11:59:31 -0500
+Subject: ovn: Prevent erroneous duplicate IP address messages.
+
+This is a backport to OVS 2.12 of OVN master commit 21c29d5b0c.
+
+When using dynamic address assignment for logical switches, OVN reserves
+the first address in the subnet for the attached router port to use.
+
+In commit 488d153ee87841c042af05bc0eb8b5481aaa98cf, the IPAM code was
+modified to add assigned router port addresses to IPAM. The use case for
+this was when a switch was joined to multiple routers, and all router
+addresses were dynamically assigned.
+
+However, that commit also made it so that when a router rightly claimed
+the first address in the subnet, ovn-northd would issue a warning about
+a duplicate IP address being set. This change fixes the issue by adding
+a special case so that we don't add the router's IP address to IPAM if
+it is the first address in the subnet. This prevents the warning message
+from appearing.
+
+Signed-off-by: Mark Michelson <mmichels@redhat.com>
+Acked-by: Numan Siddique <nusiddiq@redhat.com>
+Acked-by: Han ZHou <hzhou8@ebay.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ovn/northd/ovn-northd.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/ovn/northd/ovn-northd.c b/ovn/northd/ovn-northd.c
+index 6c6de2afd..1c9164924 100644
+--- a/ovn/northd/ovn-northd.c
++++ b/ovn/northd/ovn-northd.c
+@@ -1194,7 +1194,14 @@ ipam_add_port_addresses(struct ovn_datapath *od, struct ovn_port *op)
+ 
+         for (size_t i = 0; i < lrp_networks.n_ipv4_addrs; i++) {
+             uint32_t ip = ntohl(lrp_networks.ipv4_addrs[i].addr);
+-            ipam_insert_ip(op->peer->od, ip);
++            /* If the router has the first IP address of the subnet, don't add
++             * it to IPAM. We already added this when we initialized IPAM for
++             * the datapath. This will just result in an erroneous message
++             * about a duplicate IP address.
++             */
++            if (ip != op->peer->od->ipam_info.start_ipv4) {
++                ipam_insert_ip(op->peer->od, ip);
++            }
+         }
+ 
+         destroy_lport_addresses(&lrp_networks);
+-- 
+2.14.1
+
+

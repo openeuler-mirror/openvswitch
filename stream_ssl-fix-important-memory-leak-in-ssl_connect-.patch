@@ -1,0 +1,249 @@
+From 1a860302fd8f547396320669fd896b3aab0c6583 Mon Sep 17 00:00:00 2001
+From: Damijan Skvarc <damjan.skvarc@gmail.com>
+Date: Fri, 20 Sep 2019 09:51:54 -0700
+Subject: stream_ssl: fix important memory leak in ssl_connect() function
+
+While checking valgrind reports after running "make check-valgrind" I have noticed
+reports for several tests similar to the following:
+
+....
+==5345== Memcheck, a memory error detector
+==5345== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==5345== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
+==5345== Command: ovsdb-client --private-key=/home/damijan.skvarc/doma/ovs/tests/testpki-privkey.pem --certificate=/home/damijan.skvarc/doma/ovs/tests/testpki-cert.pem --ca-cert=/home/damijan.skvarc/doma/ovs/tests/testpki-cacert.pem transact ssl:127.0.0.1:40111 \ \ \ ["ordinals",
+==5345== \ \ \ \ \ \ {"op":\ "update",
+==5345== \ \ \ \ \ \ \ "table":\ "ordinals",
+==5345== \ \ \ \ \ \ \ "where":\ [["number",\ "==",\ 1]],
+==5345== \ \ \ \ \ \ \ "row":\ {"number":\ 2,\ "name":\ "old\ two"}},
+==5345== \ \ \ \ \ \ {"op":\ "update",
+==5345== \ \ \ \ \ \ \ "table":\ "ordinals",
+==5345== \ \ \ \ \ \ \ "where":\ [["name",\ "==",\ "two"]],
+==5345== \ \ \ \ \ \ \ "row":\ {"number":\ 1,\ "name":\ "old\ one"}}]
+==5345== Parent PID: 5344
+==5345==
+==5345==
+==5345== HEAP SUMMARY:
+==5345==     in use at exit: 116,551 bytes in 3,341 blocks
+==5345==   total heap usage: 5,134 allocs, 1,793 frees, 412,290 bytes allocated
+==5345==
+==5345== 6,221 (184 direct, 6,037 indirect) bytes in 1 blocks are definitely lost in loss record 498 of 500
+==5345==    at 0x4C2DB8F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==5345==    by 0x5105E77: CRYPTO_malloc (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5345==    by 0x51E1D23: ??? (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5345==    by 0x51E4861: ??? (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5345==    by 0x51E5414: ASN1_item_ex_d2i (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5345==    by 0x51E546A: ASN1_item_d2i (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5345==    by 0x4E56B27: ??? (in /lib/x86_64-linux-gnu/libssl.so.1.0.0)
+==5345==    by 0x4E5BA11: ??? (in /lib/x86_64-linux-gnu/libssl.so.1.0.0)
+==5345==    by 0x4E65145: ??? (in /lib/x86_64-linux-gnu/libssl.so.1.0.0)
+==5345==    by 0x4522DF: ssl_connect (stream-ssl.c:530)
+==5345==    by 0x443D38: scs_connecting (stream.c:315)
+==5345==    by 0x443D38: stream_connect (stream.c:338)
+==5345==    by 0x443FA1: stream_open_block (stream.c:266)
+==5345==    by 0x40AB79: open_jsonrpc (ovsdb-client.c:507)
+==5345==    by 0x40AB79: open_rpc (ovsdb-client.c:143)
+==5345==    by 0x40B06B: do_transact__ (ovsdb-client.c:871)
+==5345==    by 0x40B245: do_transact (ovsdb-client.c:893)
+==5345==    by 0x405F76: main (ovsdb-client.c:282)
+==5345==
+==5345== LEAK SUMMARY:
+==5345==    definitely lost: 184 bytes in 1 blocks
+==5345==    indirectly lost: 6,037 bytes in 117 blocks
+==5345==      possibly lost: 0 bytes in 0 blocks
+==5345==    still reachable: 110,330 bytes in 3,223 blocks
+==5345==         suppressed: 0 bytes in 0 blocks
+==5345== Reachable blocks (those to which a pointer was found) are not shown.
+==5345== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==5345==
+==5345== For counts of detected and suppressed errors, rerun with: -v
+==5345== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
+....
+
+This report was extracted from "index uniqueness checking" test and complains about
+leaking memory in ovsdb-client application. The problem is not huge, since ovsdb-client
+is CLI tool which is constantly reinvoked/restarted, thus leaked memory is not accumulated.
+
+More problematic issue is that for the same test valgrind reports the similar problem also for
+ovsdb-server:
+
+....
+==5290== Memcheck, a memory error detector
+==5290== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==5290== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
+==5290== Command: ovsdb-server --log-file --detach --no-chdir --pidfile --private-key=/home/damijan.skvarc/doma/ovs/tests/testpki-privkey2.pem --certificate=/home/damijan.skvarc/doma/ovs/tests/testpki-cert2.pem --ca-cert=/home/damijan.skvarc/doma/ovs/tests/testpki-cacert.pem --remote=pssl:0:127.0.0.1 db
+==5290== Parent PID: 5289
+==5290==
+==5292== Warning: noted but unhandled ioctl 0x2403 with no size/direction hints.
+==5292==    This could cause spurious value errors to appear.
+==5292==    See README_MISSING_SYSCALL_OR_IOCTL for guidance on writing a proper wrapper.
+==5292== Warning: noted but unhandled ioctl 0x2400 with no size/direction hints.
+==5292==    This could cause spurious value errors to appear.
+==5292==    See README_MISSING_SYSCALL_OR_IOCTL for guidance on writing a proper wrapper.
+==5290==
+==5290== HEAP SUMMARY:
+==5290==     in use at exit: 2,066 bytes in 48 blocks
+==5290==   total heap usage: 87 allocs, 39 frees, 14,152 bytes allocated
+==5290==
+==5290== LEAK SUMMARY:
+==5290==    definitely lost: 0 bytes in 0 blocks
+==5290==    indirectly lost: 0 bytes in 0 blocks
+==5290==      possibly lost: 0 bytes in 0 blocks
+==5290==    still reachable: 2,066 bytes in 48 blocks
+==5290==         suppressed: 0 bytes in 0 blocks
+==5290== Reachable blocks (those to which a pointer was found) are not shown.
+==5290== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==5290==
+==5290== For counts of detected and suppressed errors, rerun with: -v
+==5290== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 1 from 1)
+==5292== Warning: noted but unhandled ioctl 0x2401 with no size/direction hints.
+==5292==    This could cause spurious value errors to appear.
+==5292==    See README_MISSING_SYSCALL_OR_IOCTL for guidance on writing a proper wrapper.
+==5292==
+==5292== HEAP SUMMARY:
+==5292==     in use at exit: 164,018 bytes in 4,252 blocks
+==5292==   total heap usage: 17,910 allocs, 13,658 frees, 1,907,468 bytes allocated
+==5292==
+==5292== 49,720 (1,472 direct, 48,248 indirect) bytes in 8 blocks are definitely lost in loss record 580 of 580
+==5292==    at 0x4C2DB8F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==5292==    by 0x5105E77: CRYPTO_malloc (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5292==    by 0x51E1D23: ??? (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5292==    by 0x51E4861: ??? (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5292==    by 0x51E5414: ASN1_item_ex_d2i (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5292==    by 0x51E546A: ASN1_item_d2i (in /lib/x86_64-linux-gnu/libcrypto.so.1.0.0)
+==5292==    by 0x4E53E00: ??? (in /lib/x86_64-linux-gnu/libssl.so.1.0.0)
+==5292==    by 0x4E55727: ??? (in /lib/x86_64-linux-gnu/libssl.so.1.0.0)
+==5292==    by 0x452C4B: ssl_connect (stream-ssl.c:530)
+==5292==    by 0x445B18: scs_connecting (stream.c:315)
+==5292==    by 0x445B18: stream_connect (stream.c:338)
+==5292==    by 0x445B91: stream_recv (stream.c:369)
+==5292==    by 0x432A9C: jsonrpc_recv.part.7 (jsonrpc.c:310)
+==5292==    by 0x433977: jsonrpc_recv (jsonrpc.c:1139)
+==5292==    by 0x433977: jsonrpc_session_recv (jsonrpc.c:1112)
+==5292==    by 0x40CCE3: ovsdb_jsonrpc_session_run (jsonrpc-server.c:553)
+==5292==    by 0x40CCE3: ovsdb_jsonrpc_session_run_all (jsonrpc-server.c:586)
+==5292==    by 0x40CCE3: ovsdb_jsonrpc_server_run (jsonrpc-server.c:401)
+==5292==    by 0x40682E: main_loop (ovsdb-server.c:209)
+==5292==    by 0x40682E: main (ovsdb-server.c:460)
+==5292==
+==5292== LEAK SUMMARY:
+==5292==    definitely lost: 1,472 bytes in 8 blocks
+==5292==    indirectly lost: 48,248 bytes in 936 blocks
+==5292==      possibly lost: 0 bytes in 0 blocks
+==5292==    still reachable: 114,298 bytes in 3,308 blocks
+==5292==         suppressed: 0 bytes in 0 blocks
+==5292== Reachable blocks (those to which a pointer was found) are not shown.
+==5292== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==5292==
+==5292== For counts of detected and suppressed errors, rerun with: -v
+==5292== ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 1 from 1)
+....
+
+In this case ovsdb-server is running as daemon process (--detach option) and leaking memory is
+accumulated whenever ovsdb-client is reconnected. Within observed test ovsdb-client CLI tool
+connects 8 times to ovsdb-server. Leaked memory in ovsdb-client (for each invocation) is approx.
+6K bytes, while leaked memory in ovsdb-server is aprox. 48Kbytes what is actually 8*6K. Thus per
+each connection both ovsdb-client and ovsdb-server leak approx. 6K bytes.
+
+I have done a small manual test to check if ovsdb-server is indeed accumulating leaked memory
+by dumping ovsdb-server in a loop:
+
+console1:
+ovsdb-server \
+--log-file \
+--detach --no-chdir --pidfile \
+--private-key=testpki-privkey2.pem \
+--certificate=testpki-cert2.pem \
+--ca-cert=testpki-cacert.pem \
+--remote=pssl:0:127.0.0.1 \
+db
+
+while (true); do \
+ovsdb-client \
+--private-key=testpki-privkey.pem \
+--certificate=testpki-cert.pem \
+--ca-cert=testpki-cacert.pem \
+dump ssl:127.0.0.1:42067; \
+done
+
+console2:
+watch -n 0.5 'cat /proc/$(pidof ovsdb-server)/status | grep VmSize'
+
+In console2 it was evidently seen ovsdb-server is constantly leaking memory. After a while
+(i.e. after a certain number of reconnections) the OOM killer jumps out and kills ovsdb-server.
+
+Very similar situation was already noticed and described in
+https://github.com/openvswitch/ovs-issues/issues/168. There, the problem pops up while connecting
+controller to ovs-vswitchd daemon.
+
+Valgrind reports point to a problem in openssl library, however after studying openssl code for
+a while I have found out the problem is actually in ovs. When connection through SSL channel is
+taken place openssl library allocates memory for keeping track of certificate. Reference to this
+memory works very similar as std::shared_ptr pointer in recent C++ dialects. i.e. when allocated
+memory is referenced its reference counter is incremented and decremented after the memory is
+derefered. When reference counter becomes zero allocated memory is automatically deallocated.
+
+In openssl library environment certificate is retrieved by calling SSL_get_peer_certificate()
+where its reference counter is incremented. After retrieved certificate is not used any more its
+reference counter must be decremented by calling X509_free(). If not, allocated memory is never
+freed despite the ssl connection is properly closed.
+
+The problem was caused in stream-ssl.c in function ssl_connect(), which retrieves common peer name
+by calling SSL_get_peer_certificate() function and without calling X509_free() function afterwards.
+
+Signed-off-by: Damijan Skvarc <damjan.skvarc@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ lib/stream-ssl.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/lib/stream-ssl.c b/lib/stream-ssl.c
+index 723fde9ad..078fcbc3a 100644
+--- a/lib/stream-ssl.c
++++ b/lib/stream-ssl.c
+@@ -470,6 +470,7 @@ do_ca_cert_bootstrap(struct stream *stream)
+ static char *
+ get_peer_common_name(const struct ssl_stream *sslv)
+ {
++    char *peer_name = NULL;
+     X509 *peer_cert = SSL_get_peer_certificate(sslv->ssl);
+     if (!peer_cert) {
+         return NULL;
+@@ -478,18 +479,18 @@ get_peer_common_name(const struct ssl_stream *sslv)
+     int cn_index = X509_NAME_get_index_by_NID(X509_get_subject_name(peer_cert),
+                                               NID_commonName, -1);
+     if (cn_index < 0) {
+-        return NULL;
++        goto error;
+     }
+ 
+     X509_NAME_ENTRY *cn_entry = X509_NAME_get_entry(
+         X509_get_subject_name(peer_cert), cn_index);
+     if (!cn_entry) {
+-        return NULL;
++        goto error;
+     }
+ 
+     ASN1_STRING *cn_data = X509_NAME_ENTRY_get_data(cn_entry);
+     if (!cn_data) {
+-        return NULL;
++        goto error;
+     }
+ 
+     const char *cn;
+@@ -499,7 +500,11 @@ get_peer_common_name(const struct ssl_stream *sslv)
+ #else
+     cn = (const char *)ASN1_STRING_get0_data(cn_data);
+  #endif
+-    return xstrdup(cn);
++    peer_name = xstrdup(cn);
++
++error:
++    X509_free(peer_cert);
++    return peer_name;
+ }
+ 
+ static int
+-- 
+2.14.1
+
+

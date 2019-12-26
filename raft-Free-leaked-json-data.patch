@@ -1,0 +1,51 @@
+From 71d0bf666b826da8441c3f1bd3f49ff1917423b3 Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Wed, 11 Sep 2019 14:18:27 -0700
+Subject: raft: Free leaked json data
+
+Valgrind reported:
+
+1924: compacting online - cluster
+
+==29312== 2,886 (240 direct, 2,646 indirect) bytes in 6 blocks are definitely lost in loss record 406 of 413
+==29312==    at 0x4C2DB8F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==29312==    by 0x44A5F4: xmalloc (util.c:138)
+==29312==    by 0x4308EA: json_create (json.c:1451)
+==29312==    by 0x4308EA: json_object_create (json.c:254)
+==29312==    by 0x430ED0: json_parser_push_object (json.c:1273)
+==29312==    by 0x430ED0: json_parser_input (json.c:1371)
+==29312==    by 0x431CF1: json_lex_input (json.c:991)
+==29312==    by 0x43233B: json_parser_feed (json.c:1149)
+==29312==    by 0x41D87F: parse_body.isra.0 (log.c:411)
+==29312==    by 0x41E141: ovsdb_log_read (log.c:476)
+==29312==    by 0x42646D: raft_read_log (raft.c:866)
+==29312==    by 0x42646D: raft_open (raft.c:951)
+==29312==    by 0x4151AF: ovsdb_storage_open__ (storage.c:81)
+==29312==    by 0x408FFC: open_db (ovsdb-server.c:642)
+==29312==    by 0x40657F: main (ovsdb-server.c:358)
+
+This patch fixes it.
+
+Acked-by: William Tu <u9012063@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ovsdb/raft.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/ovsdb/raft.c b/ovsdb/raft.c
+index 9eabe2cfe..a45c7f8ba 100644
+--- a/ovsdb/raft.c
++++ b/ovsdb/raft.c
+@@ -883,6 +883,7 @@ raft_read_log(struct raft *raft)
+             error = raft_apply_record(raft, i, &r);
+             raft_record_uninit(&r);
+         }
++        json_destroy(json);
+         if (error) {
+             return ovsdb_wrap_error(error, "error reading record %llu from "
+                                     "%s log", i, raft->name);
+-- 
+2.14.1
+
+

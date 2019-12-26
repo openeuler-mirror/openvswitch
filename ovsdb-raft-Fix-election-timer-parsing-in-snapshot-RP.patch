@@ -1,0 +1,133 @@
+From 0f0cde9132141f2980a542e54dae02887972c162 Mon Sep 17 00:00:00 2001
+From: Han Zhou <hzhou@ovn.org>
+Date: Wed, 13 Nov 2019 09:33:59 -0800
+Subject: ovsdb raft: Fix election timer parsing in snapshot RPC.
+
+Commit a76ba825 took care of saving and restoring election timer in
+file header snapshot, but it didn't handle the parsing of election
+timer in install_snapshot_request/reply RPC, which results in problems,
+e.g. when election timer change log is compacted in snapshot and then a
+new node join the cluster, the new node will use the default timer
+instead of the new value.  This patch fixed it by parsing election
+timer in snapshot RPC.
+
+At the same time the patch updates the test case to cover the DB compact and
+join senario. The test reveals another 2 problems related to clustered DB
+compact, as commented in the test case's XXX, which need to be addressed
+separately.
+
+Signed-off-by: Han Zhou <hzhou@ovn.org>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ovsdb/raft-rpc.c       |  5 +++++
+ ovsdb/raft.c           |  2 +-
+ tests/ovsdb-cluster.at | 49 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 55 insertions(+), 1 deletion(-)
+
+diff --git a/ovsdb/raft-rpc.c b/ovsdb/raft-rpc.c
+index 56c07d487..18c83fe9c 100644
+--- a/ovsdb/raft-rpc.c
++++ b/ovsdb/raft-rpc.c
+@@ -511,6 +511,7 @@ raft_install_snapshot_request_to_jsonrpc(
+     json_object_put(args, "last_servers", json_clone(rq->last_servers));
+     json_object_put_format(args, "last_eid",
+                            UUID_FMT, UUID_ARGS(&rq->last_eid));
++    raft_put_uint64(args, "election_timer", rq->election_timer);
+ 
+     json_object_put(args, "data", json_clone(rq->data));
+ }
+@@ -527,6 +528,9 @@ raft_install_snapshot_request_from_jsonrpc(
+     rq->last_index = raft_parse_required_uint64(p, "last_index");
+     rq->last_term = raft_parse_required_uint64(p, "last_term");
+     rq->last_eid = raft_parse_required_uuid(p, "last_eid");
++    /* election_timer is optional in file header, but is always populated in
++     * install_snapshot_request. */
++    rq->election_timer = raft_parse_required_uint64(p, "election_timer");
+ 
+     rq->data = json_nullable_clone(
+         ovsdb_parser_member(p, "data", OP_OBJECT | OP_ARRAY));
+@@ -541,6 +545,7 @@ raft_format_install_snapshot_request(
+     ds_put_format(s, " last_term=%"PRIu64, rq->last_term);
+     ds_put_format(s, " last_eid="UUID_FMT, UUID_ARGS(&rq->last_eid));
+     ds_put_cstr(s, " last_servers=");
++    ds_put_format(s, " election_timer=%"PRIu64, rq->election_timer);
+ 
+     struct hmap servers;
+     struct ovsdb_error *error =
+diff --git a/ovsdb/raft.c b/ovsdb/raft.c
+index a45c7f8ba..f354d50a5 100644
+--- a/ovsdb/raft.c
++++ b/ovsdb/raft.c
+@@ -3257,7 +3257,7 @@ raft_send_install_snapshot_request(struct raft *raft,
+             .last_servers = raft->snap.servers,
+             .last_eid = raft->snap.eid,
+             .data = raft->snap.data,
+-            .election_timer = raft->election_timer,
++            .election_timer = raft->election_timer, /* use latest value */
+         }
+     };
+     raft_send(raft, &rpc);
+diff --git a/tests/ovsdb-cluster.at b/tests/ovsdb-cluster.at
+index de4295a7e..70812a787 100644
+--- a/tests/ovsdb-cluster.at
++++ b/tests/ovsdb-cluster.at
+@@ -233,6 +233,55 @@ done
+ OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/s1 cluster/status $schema_name | grep "Election timer: 4000"])
+ OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/s2 cluster/status $schema_name | grep "Election timer: 4000"])
+ 
++# Latest timer should be restored after DB compact and restart.
++# This is to test the install_snapshot RPC.
++
++# XXX: Insert data before compact, because otherwise transaction will trigger
++# busy loop after compact.
++# poll_loop|DBG|wakeup due to 0-ms timeout at ../ovsdb/trigger.c:164 (89% CPU usage)
++AT_CHECK([ovsdb-client transact unix:s1.ovsdb '[["idltest",
++      {"op": "insert",
++       "table": "simple",
++       "row": {"i": 1}}]]'], [0], [ignore], [ignore])
++
++# Compact online
++for i in `seq $n`; do
++    AT_CHECK([ovs-appctl -t "`pwd`"/s$i ovsdb-server/compact])
++done
++
++# XXX: Insert data after compact, because otherwise vote will fail after
++# cluster restart after compact. There will be error logs like:
++# raft|ERR|internal error: deferred vote_request message completed but not ready to send because message index 9 is past last synced index 0: s2 vote_request: term=6 last_log_index=9 last_log_term=4
++AT_CHECK([ovsdb-client transact unix:s1.ovsdb '[["idltest",
++      {"op": "insert",
++       "table": "simple",
++       "row": {"i": 1}}]]'], [0], [ignore], [ignore])
++
++for i in `seq $n`; do
++    printf "\ns$i: stopping\n"
++    OVS_APP_EXIT_AND_WAIT_BY_TARGET([`pwd`/s$i], [s$i.pid])
++done
++for i in `seq $n`; do
++    AT_CHECK([ovsdb-server -v -vconsole:off -vsyslog:off --detach --no-chdir --log-file=s$i.log --pidfile=s$i.pid --unixctl=s$i --remote=punix:s$i.ovsdb s$i.db])
++done
++for i in `seq $n`; do
++    OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/s$i cluster/status $schema_name | grep "Election timer: 4000"])
++done
++
++# Wait until cluster is ready
++for i in `seq $n`; do
++    OVS_WAIT_WHILE([ovs-appctl -t "`pwd`"/s$i cluster/status $schema_name | grep "Leader: unknown"])
++done
++
++# Newly joined member should use latest timer value
++AT_CHECK([ovsdb-tool join-cluster s4.db $schema_name unix:s4.raft unix:s1.raft])
++AT_CHECK([ovsdb-server -v -vconsole:off -vsyslog:off --detach --no-chdir --log-file=s4.log --pidfile=s4.pid --unixctl=s4 --remote=punix:s4.ovsdb s4.db])
++OVS_WAIT_UNTIL([ovs-appctl -t "`pwd`"/s4 cluster/status $schema_name | grep "Election timer: 4000"])
++# for i in `seq 10`; do
++#     ovs-appctl -t "`pwd`"/s4 cluster/status $schema_name
++#     sleep 1
++# done
++
+ AT_CLEANUP
+ 
+ 
+-- 
+2.14.1
+
+

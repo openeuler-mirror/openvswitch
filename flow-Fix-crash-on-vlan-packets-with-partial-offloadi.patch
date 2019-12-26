@@ -1,0 +1,186 @@
+From 16c647479e4e4931b45bdaa0b995c9cadb16d5a6 Mon Sep 17 00:00:00 2001
+From: Ilya Maximets <i.maximets@ovn.org>
+Date: Wed, 23 Oct 2019 22:26:52 +0200
+Subject: flow: Fix crash on vlan packets with partial offloading.
+
+parse_tcp_flags() does not care about vlan tags in a packet thus
+not able to parse them.  As a result, if partial offloading is
+enabled in userspace datapath vlan packets are not parsed, i.e.
+has no initialized offsets.  This causes OVS crash on any attempt
+to access/modify packet header fields.
+
+For example, having the flow with following actions:
+  in_port=1,ip,actions=mod_nw_src:192.168.0.7,output:IN_PORT
+
+will lead to OVS crash on vlan packet handling:
+
+ Process terminating with default action of signal 11 (SIGSEGV)
+ Invalid read of size 4
+    at 0x785657: get_16aligned_be32 (unaligned.h:249)
+    by 0x785657: odp_set_ipv4 (odp-execute.c:82)
+    by 0x785657: odp_execute_masked_set_action (odp-execute.c:527)
+    by 0x785657: odp_execute_actions (odp-execute.c:894)
+    by 0x74CDA9: dp_netdev_execute_actions (dpif-netdev.c:7355)
+    by 0x74CDA9: packet_batch_per_flow_execute (dpif-netdev.c:6339)
+    by 0x74CDA9: dp_netdev_input__ (dpif-netdev.c:6845)
+    by 0x74DB6E: dp_netdev_input (dpif-netdev.c:6854)
+    by 0x74DB6E: dp_netdev_process_rxq_port (dpif-netdev.c:4287)
+    by 0x74E863: dpif_netdev_run (dpif-netdev.c:5264)
+    by 0x703F57: type_run (ofproto-dpif.c:370)
+    by 0x6EC8B8: ofproto_type_run (ofproto.c:1760)
+    by 0x6DA52B: bridge_run__ (bridge.c:3188)
+    by 0x6E083F: bridge_run (bridge.c:3252)
+    by 0x1642E4: main (ovs-vswitchd.c:127)
+  Address 0xc is not stack'd, malloc'd or (recently) free'd
+
+Fix that by properly parsing vlan tags first.  Function 'parse_dl_type'
+transformed for that purpose as it had no users anyway.
+
+Added unit test for packet modification with partial offloading that
+triggers above crash.
+
+Fixes: aab96ec4d81e ("dpif-netdev: retrieve flow directly from the flow mark")
+Signed-off-by: Ilya Maximets <i.maximets@ovn.org>
+Acked-by: Ben Pfaff <blp@ovn.org>
+---
+ lib/flow.c           | 12 ++++----
+ lib/flow.h           |  1 -
+ tests/dpif-netdev.at | 78 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 83 insertions(+), 8 deletions(-)
+
+diff --git a/lib/flow.c b/lib/flow.c
+index 0ba146272..b7f35e33b 100644
+--- a/lib/flow.c
++++ b/lib/flow.c
+@@ -1076,15 +1076,14 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
+     dst->map = mf.map;
+ }
+ 
+-ovs_be16
+-parse_dl_type(const struct eth_header *data_, size_t size)
++static ovs_be16
++parse_dl_type(const void **datap, size_t *sizep)
+ {
+-    const void *data = data_;
+     union flow_vlan_hdr vlans[FLOW_MAX_VLAN_HEADERS];
+ 
+-    parse_vlan(&data, &size, vlans);
++    parse_vlan(datap, sizep, vlans);
+ 
+-    return parse_ethertype(&data, &size);
++    return parse_ethertype(datap, sizep);
+ }
+ 
+ /* Parses and return the TCP flags in 'packet', converted to host byte order.
+@@ -1107,8 +1106,7 @@ parse_tcp_flags(struct dp_packet *packet)
+ 
+     dp_packet_reset_offsets(packet);
+ 
+-    data_pull(&data, &size, ETH_ADDR_LEN * 2);
+-    dl_type = parse_ethertype(&data, &size);
++    dl_type = parse_dl_type(&data, &size);
+     if (OVS_UNLIKELY(eth_type_mpls(dl_type))) {
+         packet->l2_5_ofs = (char *)data - frame;
+     }
+diff --git a/lib/flow.h b/lib/flow.h
+index 7298c71f3..75751763c 100644
+--- a/lib/flow.h
++++ b/lib/flow.h
+@@ -133,7 +133,6 @@ void packet_expand(struct dp_packet *, const struct flow *, size_t size);
+ bool parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
+                          uint8_t *nw_frag,
+                          const struct ovs_16aligned_ip6_frag **frag_hdr);
+-ovs_be16 parse_dl_type(const struct eth_header *data_, size_t size);
+ bool parse_nsh(const void **datap, size_t *sizep, struct ovs_key_nsh *key);
+ uint16_t parse_tcp_flags(struct dp_packet *packet);
+ 
+diff --git a/tests/dpif-netdev.at b/tests/dpif-netdev.at
+index af8a29e44..ef521ddb8 100644
+--- a/tests/dpif-netdev.at
++++ b/tests/dpif-netdev.at
+@@ -420,3 +420,81 @@ p1: flow del: mark: 0
+ 
+ DPIF_NETDEV_FLOW_HW_OFFLOAD([dummy])
+ DPIF_NETDEV_FLOW_HW_OFFLOAD([dummy-pmd])
++
++
++m4_define([DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS],
++  [AT_SETUP([dpif-netdev - partial hw offload with packet modifications - $1])
++   OVS_VSWITCHD_START(
++     [add-port br0 p1 -- \
++      set interface p1 type=$1 ofport_request=1 options:pcap=p1.pcap options:ifindex=1 -- \
++      set bridge br0 datapath-type=dummy \
++                     other-config:datapath-id=1234 fail-mode=secure], [], [],
++      [m4_if([$1], [dummy-pmd], [--dummy-numa="0,0,0,0,1,1,1,1"], [])])
++   AT_CHECK([ovs-appctl vlog/set dpif:file:dbg dpif_netdev:file:dbg netdev_dummy:file:dbg])
++
++   AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
++   OVS_WAIT_UNTIL([grep "netdev: Flow API Enabled" ovs-vswitchd.log])
++
++   AT_CHECK([ovs-ofctl del-flows br0])
++
++   # Setting flow to modify ipv4 src address and udp dst port to be sure that
++   # offloaded packets has correctly initialized l3/l4 offsets.
++   AT_CHECK([ovs-ofctl add-flow br0 in_port=1,udp,actions=mod_nw_src:192.168.0.7,mod_tp_dst:3773,output:IN_PORT])
++
++   packet="packet_type(ns=0,id=0),eth(src=00:06:07:08:09:0a,dst=00:01:02:03:04:05),eth_type(0x8100),vlan(vid=99,pcp=7),encap(eth_type(0x0800),ipv4(src=127.0.0.1,dst=127.0.0.1,proto=17,ttl=64,frag=no),udp(src=81,dst=82))"
++   AT_CHECK([ovs-appctl netdev-dummy/receive p1 $packet --len 64], [0])
++
++   OVS_WAIT_UNTIL([grep "miss upcall" ovs-vswitchd.log])
++   AT_CHECK([grep -A 1 'miss upcall' ovs-vswitchd.log | tail -n 1], [0], [dnl
++skb_priority(0),skb_mark(0),ct_state(0),ct_zone(0),ct_mark(0),ct_label(0),recirc_id(0),dp_hash(0),in_port(1),dnl
++packet_type(ns=0,id=0),eth(src=00:06:07:08:09:0a,dst=00:01:02:03:04:05),eth_type(0x8100),vlan(vid=99,pcp=7),encap(eth_type(0x0800),ipv4(src=127.0.0.1,dst=127.0.0.1,proto=17,tos=0,ttl=64,frag=no),udp(src=81,dst=82))
++])
++   # Check that flow successfully offloaded.
++   OVS_WAIT_UNTIL([grep "succeed to add netdev flow" ovs-vswitchd.log])
++   AT_CHECK([filter_hw_flow_install < ovs-vswitchd.log | strip_xout], [0], [dnl
++p1: flow put[[create]]: flow match: recirc_id=0,eth,udp,in_port=1,dl_vlan=99,dl_vlan_pcp=7,nw_src=127.0.0.1,nw_frag=no,tp_dst=82, mark: 0
++])
++   # Check that datapath flow installed successfully.
++   AT_CHECK([filter_flow_install < ovs-vswitchd.log | strip_xout], [0], [dnl
++recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7),encap(eth_type(0x0800),ipv4(src=127.0.0.1,proto=17,frag=no),udp(dst=82)), actions: <del>
++])
++   # Inject the same packet again.
++   AT_CHECK([ovs-appctl netdev-dummy/receive p1 $packet --len 64], [0])
++
++   # Check for succesfull packet matching with installed offloaded flow.
++   AT_CHECK([filter_hw_packet_netdev_dummy < ovs-vswitchd.log | strip_xout], [0], [dnl
++p1: packet: udp,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=127.0.0.1,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=82 dnl
++matches with flow: recirc_id=0,eth,udp,dl_vlan=99,dl_vlan_pcp=7,nw_src=127.0.0.1,nw_frag=no,tp_dst=82 with mark: 0
++])
++
++   ovs-appctl revalidator/wait
++   # Dump the datapath flow to see that actions was executed for a packet.
++   AT_CHECK([ovs-appctl dpif/dump-flows br0 | strip_timers], [0], [dnl
++recirc_id(0),in_port(1),packet_type(ns=0,id=0),eth_type(0x8100),vlan(vid=99,pcp=7),encap(eth_type(0x0800),ipv4(src=127.0.0.1,proto=17,frag=no),udp(dst=82)), dnl
++packets:1, bytes:64, used:0.0s, actions:set(ipv4(src=192.168.0.7)),set(udp(dst=3773)),1
++])
++
++   # Wait for datapath flow expiration.
++   ovs-appctl time/stop
++   ovs-appctl time/warp 15000
++   ovs-appctl revalidator/wait
++
++   # Check that flow successfully deleted from HW.
++   OVS_WAIT_UNTIL([grep "succeed to delete netdev flow" ovs-vswitchd.log])
++   AT_CHECK([filter_hw_flow_del < ovs-vswitchd.log | strip_xout], [0], [dnl
++p1: flow del: mark: 0
++])
++
++   # Check that ip address and udp port were correctly modified in output packets.
++   AT_CHECK([ovs-ofctl parse-pcap p1.pcap], [0], [dnl
++udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=127.0.0.1,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=82
++udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=192.168.0.7,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=3773
++udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=127.0.0.1,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=82
++udp,in_port=ANY,dl_vlan=99,dl_vlan_pcp=7,vlan_tci1=0x0000,dl_src=00:06:07:08:09:0a,dl_dst=00:01:02:03:04:05,nw_src=192.168.0.7,nw_dst=127.0.0.1,nw_tos=0,nw_ecn=0,nw_ttl=64,tp_src=81,tp_dst=3773
++])
++
++   OVS_VSWITCHD_STOP
++   AT_CLEANUP])
++
++DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS([dummy])
++DPIF_NETDEV_FLOW_HW_OFFLOAD_OFFSETS([dummy-pmd])
+-- 
+2.14.1
+
+
