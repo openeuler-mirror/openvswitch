@@ -1,0 +1,69 @@
+From 2f4232d58d414f1e0e5cfe82ce4f7ff7fc5de621 Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Wed, 11 Sep 2019 14:18:33 -0700
+Subject: dns-resolve: Free 'struct ub_result' when callback returns error results
+
+Valgrind reported:
+
+1074: ofproto - flush flows, groups, and meters for controller change
+
+==5499== 695 (288 direct, 407 indirect) bytes in 3 blocks are definitely lost in loss record 344 of 355
+==5499==    at 0x4C2FB55: calloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==5499==    by 0x5E7F145: ??? (in /usr/lib/x86_64-linux-gnu/libunbound.so.2.4.0)
+==5499==    by 0x5E6EBDE: ub_resolve_async (in /usr/lib/x86_64-linux-gnu/libunbound.so.2.4.0)
+==5499==    by 0x55C739: resolve_async__.part.5 (dns-resolve.c:233)
+==5499==    by 0x55C85C: resolve_async__ (dns-resolve.c:261)
+==5499==    by 0x55C85C: resolve_callback__ (dns-resolve.c:262)
+==5499==    by 0x5E6FEF1: ub_process (in /usr/lib/x86_64-linux-gnu/libunbound.so.2.4.0)
+==5499==    by 0x55CAF3: dns_resolve (dns-resolve.c:153)
+==5499==    by 0x523864: parse_sockaddr_components_dns (socket-util.c:438)
+==5499==    by 0x523864: parse_sockaddr_components (socket-util.c:504)
+==5499==    by 0x524468: inet_parse_active (socket-util.c:541)
+==5499==    by 0x524564: inet_open_active (socket-util.c:579)
+==5499==    by 0x5959F9: tcp_open (stream-tcp.c:56)
+==5499==    by 0x529192: stream_open (stream.c:228)
+==5499==    by 0x529910: stream_open_with_default_port (stream.c:724)
+==5499==    by 0x595FAE: vconn_stream_open (vconn-stream.c:81)
+==5499==    by 0x535C9B: vconn_open (vconn.c:250)
+==5499==    by 0x517C59: reconnect (rconn.c:467)
+==5499==    by 0x5184C7: run_BACKOFF (rconn.c:492)
+==5499==    by 0x5184C7: rconn_run (rconn.c:660)
+==5499==    by 0x457FE8: ofservice_run (connmgr.c:1992)
+==5499==    by 0x457FE8: connmgr_run (connmgr.c:367)
+==5499==    by 0x41E0F5: ofproto_run (ofproto.c:1845)
+==5499==    by 0x40BA63: bridge_run__ (bridge.c:2971)
+
+In ub_resolve_async's callback function, 'struct ub_result' should be
+finally freed even if there is a resolving error. This patch fixes it.
+
+Acked-by: William Tu <u9012063@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ lib/dns-resolve.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/lib/dns-resolve.c b/lib/dns-resolve.c
+index e98e65f49..1ff58960f 100644
+--- a/lib/dns-resolve.c
++++ b/lib/dns-resolve.c
+@@ -251,6 +251,7 @@ resolve_callback__(void *req_, int err, struct ub_result *result)
+     struct resolve_request *req = req_;
+ 
+     if (err != 0 || (result->qtype == ns_t_aaaa && !result->havedata)) {
++        ub_resolve_free(result);
+         req->state = RESOLVE_ERROR;
+         VLOG_ERR_RL(&rl, "%s: failed to resolve", req->name);
+         return;
+@@ -265,6 +266,7 @@ resolve_callback__(void *req_, int err, struct ub_result *result)
+ 
+     char *addr;
+     if (!resolve_result_to_addr__(result, &addr)) {
++        ub_resolve_free(result);
+         req->state = RESOLVE_ERROR;
+         VLOG_ERR_RL(&rl, "%s: failed to resolve", req->name);
+         return;
+-- 
+2.14.1
+
+

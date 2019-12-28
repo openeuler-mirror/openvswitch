@@ -1,0 +1,259 @@
+From 458e91300ee08abb6a3936f2549cc5d944c02107 Mon Sep 17 00:00:00 2001
+From: Ilya Maximets <i.maximets@ovn.org>
+Date: Fri, 1 Nov 2019 22:24:39 +0100
+Subject: ofproto: Fix crash on PACKET_OUT due to recursive locking after upcall.
+
+Handling of OpenFlow PACKET_OUT implies pushing the packet through
+the datapath and packet processing inside the datapath could trigger
+an upcall.  In case of system datapath, 'dpif_execute()' sends packet
+to the kernel module and returns.  If any, upcall  will be triggered
+inside the kernel and handled by a separate thread in userspace.
+But in case of userspace datapath full processing of the packet happens
+inside the 'dpif_execute()' in the same thread that handled PACKET_OUT.
+This causes an issue if upcall will lead to modification of flow rules.
+For example, it could happen while processing of 'learn' actions.
+Since whole handling of PACKET_OUT is protected by 'ofproto_mutex',
+OVS will assert on attempt to take it recursively while processing
+'learn' actions:
+
+   0 __GI_raise (sig=sig@entry=6)
+   1 __GI_abort ()
+   2 ovs_abort_valist ()
+   3 ovs_abort ()
+   4 ovs_mutex_lock_at (where=where@entry=0xad4199 "ofproto/ofproto.c:5391")
+                <Trying to acquire ofproto_mutex again>
+   5 ofproto_flow_mod_learn ()       at ofproto/ofproto.c:5391
+                <Trying to modify flows according to 'learn' action>
+   6 xlate_learn_action ()           at ofproto/ofproto-dpif-xlate.c:5378
+                <'learn' action found>
+   7 do_xlate_actions ()             at ofproto/ofproto-dpif-xlate.c:6893
+   8 xlate_recursively ()            at ofproto/ofproto-dpif-xlate.c:4233
+   9 xlate_table_action ()           at ofproto/ofproto-dpif-xlate.c:4361
+  10 in xlate_ofpact_resubmit ()     at ofproto/ofproto-dpif-xlate.c:4672
+  11 do_xlate_actions ()             at ofproto/ofproto-dpif-xlate.c:6773
+  12 xlate_actions ()                at ofproto/ofproto-dpif-xlate.c:7570
+                 <Translating actions>
+  13 upcall_xlate ()                 at ofproto/ofproto-dpif-upcall.c:1197
+  14 process_upcall ()               at ofproto/ofproto-dpif-upcall.c:1413
+  15 upcall_cb ()                    at ofproto/ofproto-dpif-upcall.c:1315
+  16 dp_netdev_upcall (DPIF_UC_MISS) at lib/dpif-netdev.c:6236
+                 <Flow cache miss. Making upcall>
+  17 handle_packet_upcall ()         at lib/dpif-netdev.c:6591
+  18 fast_path_processing ()         at lib/dpif-netdev.c:6709
+  19 dp_netdev_input__ ()            at lib/dpif-netdev.c:6797
+  20 dp_netdev_recirculate ()        at lib/dpif-netdev.c:6842
+  21 dp_execute_cb ()                at lib/dpif-netdev.c:7158
+  22 odp_execute_actions ()          at lib/odp-execute.c:794
+  23 dp_netdev_execute_actions ()    at lib/dpif-netdev.c:7332
+  24 dpif_netdev_execute ()          at lib/dpif-netdev.c:3725
+  25 dpif_netdev_operate ()          at lib/dpif-netdev.c:3756
+                 <Packet pushed to userspace datapath for processing>
+  26 dpif_operate ()                 at lib/dpif.c:1367
+  27 dpif_execute ()                 at lib/dpif.c:1321
+  28 packet_execute ()               at ofproto/ofproto-dpif.c:4760
+  29 ofproto_packet_out_finish ()    at ofproto/ofproto.c:3594
+                 <Taking ofproto_mutex>
+  30 handle_packet_out ()            at ofproto/ofproto.c:3635
+  31 handle_single_part_openflow (OFPTYPE_PACKET_OUT) at ofproto/ofproto.c:8400
+  32 handle_openflow ()                               at ofproto/ofproto.c:8587
+  33 ofconn_run ()
+  34 connmgr_run ()
+  35 ofproto_run ()
+  36 bridge_run__ ()
+  37 bridge_run ()
+  38 main ()
+
+Fix that by splitting the 'ofproto_packet_out_finish()' in two parts.
+First one that translates side-effects and requires holding 'ofproto_mutex'
+and the second that only pushes packet to datapath.  The second part moved
+out of 'ofproto_mutex' because 'ofproto_mutex' is not required and actually
+should not be taken in order to avoid recursive locking.
+
+Reported-by: Anil Kumar Koli <anilkumar.k@altencalsoftlabs.com>
+Reported-at: https://mail.openvswitch.org/pipermail/ovs-discuss/2019-April/048494.html
+Signed-off-by: Ilya Maximets <i.maximets@ovn.org>
+Acked-by: Ben Pfaff <blp@ovn.org>
+---
+ ofproto/ofproto-dpif.c     | 40 ++++++++++++++++++++++++++++++----------
+ ofproto/ofproto-provider.h | 12 +++++++++---
+ ofproto/ofproto.c          | 29 +++++++++++++++++++++++++----
+ 3 files changed, 64 insertions(+), 17 deletions(-)
+
+diff --git a/ofproto/ofproto-dpif.c b/ofproto/ofproto-dpif.c
+index c7c70062c..3d6d72a40 100644
+--- a/ofproto/ofproto-dpif.c
++++ b/ofproto/ofproto-dpif.c
+@@ -4786,12 +4786,13 @@ ofproto_dpif_xcache_execute(struct ofproto_dpif *ofproto,
+ }
+ 
+ static void
+-packet_execute(struct ofproto *ofproto_, struct ofproto_packet_out *opo)
++packet_execute_prepare(struct ofproto *ofproto_,
++                       struct ofproto_packet_out *opo)
+     OVS_REQUIRES(ofproto_mutex)
+ {
+     struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
+     struct dpif_flow_stats stats;
+-    struct dpif_execute execute;
++    struct dpif_execute *execute;
+ 
+     struct ofproto_dpif_packet_out *aux = opo->aux;
+     ovs_assert(aux);
+@@ -4800,22 +4801,40 @@ packet_execute(struct ofproto *ofproto_, struct ofproto_packet_out *opo)
+     dpif_flow_stats_extract(opo->flow, opo->packet, time_msec(), &stats);
+     ofproto_dpif_xcache_execute(ofproto, &aux->xcache, &stats);
+ 
+-    execute.actions = aux->odp_actions.data;
+-    execute.actions_len = aux->odp_actions.size;
++    execute = xzalloc(sizeof *execute);
++    execute->actions = xmemdup(aux->odp_actions.data, aux->odp_actions.size);
++    execute->actions_len = aux->odp_actions.size;
+ 
+     pkt_metadata_from_flow(&opo->packet->md, opo->flow);
+-    execute.packet = opo->packet;
+-    execute.flow = opo->flow;
+-    execute.needs_help = aux->needs_help;
+-    execute.probe = false;
+-    execute.mtu = 0;
++    execute->packet = opo->packet;
++    execute->flow = opo->flow;
++    execute->needs_help = aux->needs_help;
++    execute->probe = false;
++    execute->mtu = 0;
+ 
+     /* Fix up in_port. */
+     ofproto_dpif_set_packet_odp_port(ofproto, opo->flow->in_port.ofp_port,
+                                      opo->packet);
+ 
+-    dpif_execute(ofproto->backer->dpif, &execute);
+     ofproto_dpif_packet_out_delete(aux);
++    opo->aux = execute;
++}
++
++static void
++packet_execute(struct ofproto *ofproto_, struct ofproto_packet_out *opo)
++    OVS_EXCLUDED(ofproto_mutex)
++{
++    struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
++    struct dpif_execute *execute = opo->aux;
++
++    if (!execute) {
++        return;
++    }
++
++    dpif_execute(ofproto->backer->dpif, execute);
++
++    free(CONST_CAST(struct nlattr *, execute->actions));
++    free(execute);
+     opo->aux = NULL;
+ }
+ 
+@@ -6194,6 +6213,7 @@ const struct ofproto_class ofproto_dpif_class = {
+     rule_get_stats,
+     packet_xlate,
+     packet_xlate_revert,
++    packet_execute_prepare,
+     packet_execute,
+     set_frag_handling,
+     nxt_resume,
+diff --git a/ofproto/ofproto-provider.h b/ofproto/ofproto-provider.h
+index 7907d4bfb..d520a6380 100644
+--- a/ofproto/ofproto-provider.h
++++ b/ofproto/ofproto-provider.h
+@@ -1368,9 +1368,15 @@ struct ofproto_class {
+      * packet_xlate_revert() calls have to be made in reverse order. */
+     void (*packet_xlate_revert)(struct ofproto *, struct ofproto_packet_out *);
+ 
+-    /* Executes the datapath actions, translation side-effects, and stats as
+-     * produced by ->packet_xlate().  The caller retains ownership of 'opo'.
+-     */
++    /* Translates side-effects, and stats as produced by ->packet_xlate().
++     * Prepares to execute datapath actions.  The caller retains ownership
++     * of 'opo'. */
++    void (*packet_execute_prepare)(struct ofproto *,
++                                   struct ofproto_packet_out *opo);
++
++    /* Executes the datapath actions.  The caller retains ownership of 'opo'.
++     * Should be called after successful packet_execute_prepare().
++     * No-op if called after packet_xlate_revert(). */
+     void (*packet_execute)(struct ofproto *, struct ofproto_packet_out *opo);
+ 
+     /* Changes the OpenFlow IP fragment handling policy to 'frag_handling',
+diff --git a/ofproto/ofproto.c b/ofproto/ofproto.c
+index 6ffaced18..715da0607 100644
+--- a/ofproto/ofproto.c
++++ b/ofproto/ofproto.c
+@@ -3589,10 +3589,21 @@ ofproto_packet_out_revert(struct ofproto *ofproto,
+     ofproto->ofproto_class->packet_xlate_revert(ofproto, opo);
+ }
+ 
++static void
++ofproto_packet_out_prepare(struct ofproto *ofproto,
++                           struct ofproto_packet_out *opo)
++    OVS_REQUIRES(ofproto_mutex)
++{
++    ofproto->ofproto_class->packet_execute_prepare(ofproto, opo);
++}
++
++/* Execution of packet_out action in datapath could end up in upcall with
++ * subsequent flow translations and possible rule modifications.
++ * So, the caller should not hold 'ofproto_mutex'. */
+ static void
+ ofproto_packet_out_finish(struct ofproto *ofproto,
+                           struct ofproto_packet_out *opo)
+-    OVS_REQUIRES(ofproto_mutex)
++    OVS_EXCLUDED(ofproto_mutex)
+ {
+     ofproto->ofproto_class->packet_execute(ofproto, opo);
+ }
+@@ -3635,10 +3646,13 @@ handle_packet_out(struct ofconn *ofconn, const struct ofp_header *oh)
+     opo.version = p->tables_version;
+     error = ofproto_packet_out_start(p, &opo);
+     if (!error) {
+-        ofproto_packet_out_finish(p, &opo);
++        ofproto_packet_out_prepare(p, &opo);
+     }
+     ovs_mutex_unlock(&ofproto_mutex);
+ 
++    if (!error) {
++        ofproto_packet_out_finish(p, &opo);
++    }
+     ofproto_packet_out_uninit(&opo);
+     return error;
+ }
+@@ -8157,7 +8171,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
+                     } else if (be->type == OFPTYPE_GROUP_MOD) {
+                         ofproto_group_mod_finish(ofproto, &be->ogm, &req);
+                     } else if (be->type == OFPTYPE_PACKET_OUT) {
+-                        ofproto_packet_out_finish(ofproto, &be->opo);
++                        ofproto_packet_out_prepare(ofproto, &be->opo);
+                     }
+                 }
+                 if (error) {
+@@ -8168,7 +8182,7 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
+                 /* Send error referring to the original message. */
+                 ofconn_send_error(ofconn, be->msg, error);
+                 error = OFPERR_OFPBFC_MSG_FAILED;
+-                
++
+                 /* Revert.  Undo all the changes made above. */
+                 LIST_FOR_EACH_REVERSE_CONTINUE (be, node, &bundle->msg_list) {
+                     if (be->type == OFPTYPE_FLOW_MOD) {
+@@ -8187,6 +8201,13 @@ do_bundle_commit(struct ofconn *ofconn, uint32_t id, uint16_t flags)
+         ovs_mutex_unlock(&ofproto_mutex);
+     }
+ 
++    /* Executing remaining datapath actions. */
++    LIST_FOR_EACH (be, node, &bundle->msg_list) {
++        if (be->type == OFPTYPE_PACKET_OUT) {
++            ofproto_packet_out_finish(ofproto, &be->opo);
++        }
++    }
++
+     /* The bundle is discarded regardless the outcome. */
+     ofp_bundle_remove__(ofconn, bundle);
+     return error;
+-- 
+2.14.1
+
+

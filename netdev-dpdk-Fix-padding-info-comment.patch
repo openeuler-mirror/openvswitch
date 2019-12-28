@@ -1,0 +1,44 @@
+From 0976ef00a5e5a1e79ce74f8bbb2e9243851c4c00 Mon Sep 17 00:00:00 2001
+From: Kevin Traynor <ktraynor@redhat.com>
+Date: Thu, 5 Sep 2019 14:21:09 +0100
+Subject: netdev-dpdk: Fix padding info comment.
+
+The comment was incorrectly updated. Fix it to the
+correct value of 36 pad bytes.
+
+/* --- cacheline 5 boundary (320 bytes) --- */
+union {
+        struct {
+                struct netdev_stats stats;       /*   320   336 */
+                /* --- cacheline 5 boundary (320 bytes) was 16 bytes ago --- */
+                uint64_t   tx_retries;           /*   656     8 */
+                rte_spinlock_t stats_lock;       /*   664     4 */
+        };                                       /*         352 */
+        uint8_t            pad52[384];           /*         384 */
+};                                               /*   320   384 */
+
+Fixes: c161357d5d96 ("netdev-dpdk: Add custom stat for vhost tx retries.")
+Reported-by: Ilya Maximets <i.maximets@samsung.com>
+Signed-off-by: Kevin Traynor <ktraynor@redhat.com>
+Signed-off-by: Ian Stokes <ian.stokes@intel.com>
+---
+ lib/netdev-dpdk.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/netdev-dpdk.c b/lib/netdev-dpdk.c
+index 48057835f..5466499b4 100644
+--- a/lib/netdev-dpdk.c
++++ b/lib/netdev-dpdk.c
+@@ -451,7 +451,7 @@ struct netdev_dpdk {
+         uint64_t tx_retries;
+         /* Protects stats */
+         rte_spinlock_t stats_lock;
+-        /* 4 pad bytes here. */
++        /* 36 pad bytes here. */
+     );
+ 
+     PADDED_MEMBERS(CACHE_LINE_SIZE,
+-- 
+2.14.1
+
+

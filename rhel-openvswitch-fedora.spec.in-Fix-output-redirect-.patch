@@ -1,0 +1,31 @@
+From 479770e869295df0912da541062064b49a838ab1 Mon Sep 17 00:00:00 2001
+From: Roi Dayan <roid@mellanox.com>
+Date: Mon, 28 Oct 2019 10:37:44 +0200
+Subject: rhel: openvswitch-fedora.spec.in: Fix output redirect to null device
+
+Add missing slash.
+
+Fixes: 0447019df7c6 ("fedora-spec: added systemd post/postun/pre/preun sections")
+Signed-off-by: Roi Dayan <roid@mellanox.com>
+Signed-off-by: Simon Horman <simon.horman@netronome.com>
+---
+ rhel/openvswitch-fedora.spec.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rhel/openvswitch-fedora.spec.in b/rhel/openvswitch-fedora.spec.in
+index 9c752ff4e..aff357263 100644
+--- a/rhel/openvswitch-fedora.spec.in
++++ b/rhel/openvswitch-fedora.spec.in
+@@ -396,7 +396,7 @@ fi
+ %else
+     # Package install, not upgrade
+     if [ $1 -eq 1 ]; then
+-        /bin/systemctl daemon-reload >dev/null || :
++        /bin/systemctl daemon-reload >/dev/null || :
+     fi
+ %endif
+ 
+-- 
+2.14.1
+
+

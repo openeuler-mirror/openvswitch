@@ -1,0 +1,76 @@
+From cb7e9a8240d6a46de831bf549abc6282a59d5edd Mon Sep 17 00:00:00 2001
+From: Tomasz Konieczny <tomaszx.konieczny@intel.com>
+Date: Thu, 12 Sep 2019 12:43:20 +0200
+Subject: netdev-dpdk: Fix flow control not configuring.
+
+Currently OVS is unable to change flow control configuration in DPDK
+because new settings are being overwritten by current settings with
+rte_eth_dev_flow_ctrl_get(). The fix restores correct order of
+operations and at the same time does not trigger error on devices
+without flow control support when flow control not requested.
+
+Fixes: 7e1de65e8dfb ("netdev-dpdk: Fix failure to configure flow control at netdev-init.")
+Signed-off-by: Tomasz Konieczny <tomaszx.konieczny@intel.com>
+Co-authored-by: Ilya Maximets <i.maximets@ovn.org>
+Signed-off-by: Ilya Maximets <i.maximets@ovn.org>
+---
+ lib/netdev-dpdk.c | 32 ++++++++++++++++++++++++++------
+ 1 file changed, 26 insertions(+), 6 deletions(-)
+
+diff --git a/lib/netdev-dpdk.c b/lib/netdev-dpdk.c
+index 5466499b4..0bb826111 100644
+--- a/lib/netdev-dpdk.c
++++ b/lib/netdev-dpdk.c
+@@ -1805,6 +1805,7 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
+ {
+     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+     bool rx_fc_en, tx_fc_en, autoneg, lsc_interrupt_mode;
++    bool flow_control_requested = true;
+     enum rte_eth_fc_mode fc_mode;
+     static const enum rte_eth_fc_mode fc_mode_set[2][2] = {
+         {RTE_FC_NONE,     RTE_FC_TX_PAUSE},
+@@ -1892,15 +1893,34 @@ netdev_dpdk_set_config(struct netdev *netdev, const struct smap *args,
+     autoneg = smap_get_bool(args, "flow-ctrl-autoneg", false);
+ 
+     fc_mode = fc_mode_set[tx_fc_en][rx_fc_en];
++
++    if (!smap_get(args, "rx-flow-ctrl") && !smap_get(args, "tx-flow-ctrl")
++        && !smap_get(args, "flow-ctrl-autoneg")) {
++        /* FIXME: User didn't ask for flow control configuration.
++         *        For now we'll not print a warning if flow control is not
++         *        supported by the DPDK port. */
++        flow_control_requested = false;
++    }
++
++    /* Get the Flow control configuration. */
++    err = -rte_eth_dev_flow_ctrl_get(dev->port_id, &dev->fc_conf);
++    if (err) {
++        if (err == ENOTSUP) {
++            if (flow_control_requested) {
++                VLOG_WARN("%s: Flow control is not supported.",
++                          netdev_get_name(netdev));
++            }
++            err = 0; /* Not fatal. */
++        } else {
++            VLOG_WARN("%s: Cannot get flow control parameters: %s",
++                      netdev_get_name(netdev), rte_strerror(err));
++        }
++        goto out;
++    }
++
+     if (dev->fc_conf.mode != fc_mode || autoneg != dev->fc_conf.autoneg) {
+         dev->fc_conf.mode = fc_mode;
+         dev->fc_conf.autoneg = autoneg;
+-        /* Get the Flow control configuration for DPDK-ETH */
+-        err = rte_eth_dev_flow_ctrl_get(dev->port_id, &dev->fc_conf);
+-        if (err) {
+-            VLOG_WARN("Cannot get flow control parameters on port "
+-                DPDK_PORT_ID_FMT", err=%d", dev->port_id, err);
+-        }
+         dpdk_eth_flow_ctrl_setup(dev);
+     }
+ 
+-- 
+2.14.1
+
+

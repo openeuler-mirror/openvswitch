@@ -1,0 +1,234 @@
+From fc7fcb604c863b8eafaa319658e11da6d31e3fb6 Mon Sep 17 00:00:00 2001
+From: Dumitru Ceara <dceara@redhat.com>
+Date: Tue, 3 Dec 2019 10:56:54 +0100
+Subject: ovn-controller: Add missing port group lflow references.
+
+The commit that adds incremental processing for port-group changes
+doesn't store logical flow references for port groups. If a port group
+is updated (e.g., a port is added) no logical flow recalculation will be
+performed.
+
+To fix this, when parsing the flow expression also store the referenced
+port groups and bind them to the logical flows that depend on them. If
+the port group is updated then the logical flows referring them will
+also be reinstalled.
+
+(cherry picked from ovn commit bbcac48d443e98cbe47d3941f7e192c9c3443cb5)
+
+Reported-by: Daniel Alvarez <dalvarez@redhat.com>
+Reported-at: https://bugzilla.redhat.com/1778164
+CC: Han Zhou <hzhou@ovn.org>
+Fixes: 978f5e90af0a ("ovn-controller: Incremental processing for port-group changes.")
+Tested-By: Daniel Alvarez <dalvarez@redhat.com>
+Signed-off-by: Dumitru Ceara <dceara@redhat.com>
+Signed-off-by: Han Zhou <hzhou@ovn.org>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ include/ovn/expr.h        |  4 +++-
+ ovn/controller/lflow.c    |  9 ++++++++-
+ ovn/lib/actions.c         |  4 ++--
+ ovn/lib/expr.c            | 24 +++++++++++++++++-------
+ ovn/utilities/ovn-trace.c |  2 +-
+ tests/test-ovn.c          |  8 ++++----
+ 6 files changed, 35 insertions(+), 16 deletions(-)
+
+diff --git a/include/ovn/expr.h b/include/ovn/expr.h
+index 22f633e57..21bf51c22 100644
+--- a/include/ovn/expr.h
++++ b/include/ovn/expr.h
+@@ -390,11 +390,13 @@ void expr_print(const struct expr *);
+ struct expr *expr_parse(struct lexer *, const struct shash *symtab,
+                         const struct shash *addr_sets,
+                         const struct shash *port_groups,
+-                        struct sset *addr_sets_ref);
++                        struct sset *addr_sets_ref,
++                        struct sset *port_groups_ref);
+ struct expr *expr_parse_string(const char *, const struct shash *symtab,
+                                const struct shash *addr_sets,
+                                const struct shash *port_groups,
+                                struct sset *addr_sets_ref,
++                               struct sset *port_groups_ref,
+                                char **errorp);
+ 
+ struct expr *expr_clone(struct expr *);
+diff --git a/ovn/controller/lflow.c b/ovn/controller/lflow.c
+index dd72a5b46..047b4711c 100644
+--- a/ovn/controller/lflow.c
++++ b/ovn/controller/lflow.c
+@@ -616,14 +616,21 @@ consider_logical_flow(
+     struct expr *expr;
+ 
+     struct sset addr_sets_ref = SSET_INITIALIZER(&addr_sets_ref);
++    struct sset port_groups_ref = SSET_INITIALIZER(&port_groups_ref);
+     expr = expr_parse_string(lflow->match, &symtab, addr_sets, port_groups,
+-                             &addr_sets_ref, &error);
++                             &addr_sets_ref, &port_groups_ref, &error);
+     const char *addr_set_name;
+     SSET_FOR_EACH (addr_set_name, &addr_sets_ref) {
+         lflow_resource_add(lfrr, REF_TYPE_ADDRSET, addr_set_name,
+                            &lflow->header_.uuid);
+     }
++    const char *port_group_name;
++    SSET_FOR_EACH (port_group_name, &port_groups_ref) {
++        lflow_resource_add(lfrr, REF_TYPE_PORTGROUP, port_group_name,
++                           &lflow->header_.uuid);
++    }
+     sset_destroy(&addr_sets_ref);
++    sset_destroy(&port_groups_ref);
+ 
+     if (!error) {
+         if (prereqs) {
+diff --git a/ovn/lib/actions.c b/ovn/lib/actions.c
+index 274297194..58e0006d9 100644
+--- a/ovn/lib/actions.c
++++ b/ovn/lib/actions.c
+@@ -240,8 +240,8 @@ add_prerequisite(struct action_context *ctx, const char *prerequisite)
+     struct expr *expr;
+     char *error;
+ 
+-    expr = expr_parse_string(prerequisite, ctx->pp->symtab, NULL, NULL, NULL,
+-                             &error);
++    expr = expr_parse_string(prerequisite, ctx->pp->symtab, NULL, NULL,
++                             NULL, NULL, &error);
+     ovs_assert(!error);
+     ctx->prereqs = expr_combine(EXPR_T_AND, ctx->prereqs, expr);
+ }
+diff --git a/ovn/lib/expr.c b/ovn/lib/expr.c
+index c0871e1e8..629187a5b 100644
+--- a/ovn/lib/expr.c
++++ b/ovn/lib/expr.c
+@@ -467,7 +467,8 @@ struct expr_context {
+     const struct shash *symtab;    /* Symbol table. */
+     const struct shash *addr_sets; /* Address set table. */
+     const struct shash *port_groups; /* Port group table. */
+-    struct sset *addr_sets_ref;       /* The set of address set referenced. */
++    struct sset *addr_sets_ref;      /* The set of address set referenced. */
++    struct sset *port_groups_ref;    /* The set of port groups referenced. */
+     bool not;                    /* True inside odd number of NOT operators. */
+     unsigned int paren_depth;    /* Depth of nested parentheses. */
+ };
+@@ -769,6 +770,10 @@ static bool
+ parse_port_group(struct expr_context *ctx, struct expr_constant_set *cs,
+                  size_t *allocated_values)
+ {
++    if (ctx->port_groups_ref) {
++        sset_add(ctx->port_groups_ref, ctx->lexer->token.s);
++    }
++
+     struct expr_constant_set *port_group
+         = (ctx->port_groups
+            ? shash_find_data(ctx->port_groups, ctx->lexer->token.s)
+@@ -1283,13 +1288,15 @@ struct expr *
+ expr_parse(struct lexer *lexer, const struct shash *symtab,
+            const struct shash *addr_sets,
+            const struct shash *port_groups,
+-           struct sset *addr_sets_ref)
++           struct sset *addr_sets_ref,
++           struct sset *port_groups_ref)
+ {
+     struct expr_context ctx = { .lexer = lexer,
+                                 .symtab = symtab,
+                                 .addr_sets = addr_sets,
+                                 .port_groups = port_groups,
+-                                .addr_sets_ref = addr_sets_ref };
++                                .addr_sets_ref = addr_sets_ref,
++                                .port_groups_ref = port_groups_ref };
+     return lexer->error ? NULL : expr_parse__(&ctx);
+ }
+ 
+@@ -1304,6 +1311,7 @@ expr_parse_string(const char *s, const struct shash *symtab,
+                   const struct shash *addr_sets,
+                   const struct shash *port_groups,
+                   struct sset *addr_sets_ref,
++                  struct sset *port_groups_ref,
+                   char **errorp)
+ {
+     struct lexer lexer;
+@@ -1311,7 +1319,7 @@ expr_parse_string(const char *s, const struct shash *symtab,
+     lexer_init(&lexer, s);
+     lexer_get(&lexer);
+     struct expr *expr = expr_parse(&lexer, symtab, addr_sets, port_groups,
+-                                   addr_sets_ref);
++                                   addr_sets_ref, port_groups_ref);
+     lexer_force_end(&lexer);
+     *errorp = lexer_steal_error(&lexer);
+     if (*errorp) {
+@@ -1537,7 +1545,8 @@ expr_get_level(const struct expr *expr)
+ static enum expr_level
+ expr_parse_level(const char *s, const struct shash *symtab, char **errorp)
+ {
+-    struct expr *expr = expr_parse_string(s, symtab, NULL, NULL, NULL, errorp);
++    struct expr *expr = expr_parse_string(s, symtab, NULL, NULL, NULL, NULL,
++                                          errorp);
+     enum expr_level level = expr ? expr_get_level(expr) : EXPR_L_NOMINAL;
+     expr_destroy(expr);
+     return level;
+@@ -1708,7 +1717,7 @@ parse_and_annotate(const char *s, const struct shash *symtab,
+     char *error;
+     struct expr *expr;
+ 
+-    expr = expr_parse_string(s, symtab, NULL, NULL, NULL, &error);
++    expr = expr_parse_string(s, symtab, NULL, NULL, NULL, NULL, &error);
+     if (expr) {
+         expr = expr_annotate_(expr, symtab, nesting, &error);
+     }
+@@ -3432,7 +3441,8 @@ expr_parse_microflow(const char *s, const struct shash *symtab,
+     lexer_init(&lexer, s);
+     lexer_get(&lexer);
+ 
+-    struct expr *e = expr_parse(&lexer, symtab, addr_sets, port_groups, NULL);
++    struct expr *e = expr_parse(&lexer, symtab, addr_sets, port_groups,
++                                NULL, NULL);
+     lexer_force_end(&lexer);
+ 
+     if (e) {
+diff --git a/ovn/utilities/ovn-trace.c b/ovn/utilities/ovn-trace.c
+index b532b8eaf..9c27131be 100644
+--- a/ovn/utilities/ovn-trace.c
++++ b/ovn/utilities/ovn-trace.c
+@@ -850,7 +850,7 @@ read_flows(void)
+         char *error;
+         struct expr *match;
+         match = expr_parse_string(sblf->match, &symtab, &address_sets,
+-                                  &port_groups, NULL, &error);
++                                  &port_groups, NULL, NULL, &error);
+         if (error) {
+             VLOG_WARN("%s: parsing expression failed (%s)",
+                       sblf->match, error);
+diff --git a/tests/test-ovn.c b/tests/test-ovn.c
+index cf1bc5432..6b5e365f0 100644
+--- a/tests/test-ovn.c
++++ b/tests/test-ovn.c
+@@ -289,7 +289,7 @@ test_parse_expr__(int steps)
+         char *error;
+ 
+         expr = expr_parse_string(ds_cstr(&input), &symtab, &addr_sets,
+-                                 &port_groups, NULL, &error);
++                                 &port_groups, NULL, NULL, &error);
+         if (!error && steps > 0) {
+             expr = expr_annotate(expr, &symtab, &error);
+         }
+@@ -413,8 +413,8 @@ test_evaluate_expr(struct ovs_cmdl_context *ctx)
+     while (!ds_get_test_line(&input, stdin)) {
+         struct expr *expr;
+ 
+-        expr = expr_parse_string(ds_cstr(&input), &symtab, NULL, NULL, NULL,
+-                                 &error);
++        expr = expr_parse_string(ds_cstr(&input), &symtab, NULL, NULL,
++                                 NULL, NULL, &error);
+         if (!error) {
+             expr = expr_annotate(expr, &symtab, &error);
+         }
+@@ -889,7 +889,7 @@ test_tree_shape_exhaustively(struct expr *expr, struct shash *symtab,
+ 
+             char *error;
+             modified = expr_parse_string(ds_cstr(&s), symtab, NULL,
+-                                         NULL, NULL, &error);
++                                         NULL, NULL, NULL, &error);
+             if (error) {
+                 fprintf(stderr, "%s fails to parse (%s)\n",
+                         ds_cstr(&s), error);
+-- 
+2.14.1
+
+
