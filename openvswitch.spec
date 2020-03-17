@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        3
+Release:        4
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
@@ -55,7 +55,7 @@ rm \
     $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
     $RPM_BUILD_ROOT/usr/bin/ovs-test \
-    $RPM_BUILD_ROOT/usr/bin/ovs-l3ping \ 
+    $RPM_BUILD_ROOT/usr/bin/ovs-l3ping \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-l3ping.8 \
     $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
@@ -198,3 +198,10 @@ exit 0
 %{_mandir}/man5/*
 %{_mandir}/man7/*
 %doc README.rst NEWS rhel/README.RHEL.rst
+
+%changelog
+* Tue Mar 17 2020 gulining <gulining1@huawei.com> - 2.12.0-4
+- remove extra spaces to resolve compile error
+
+* Mon Mar 16 2020 jiangkai <jiangkai20@huawei.com> - 2.12.0-3
+- Package init
