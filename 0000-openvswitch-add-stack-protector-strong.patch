@@ -1,0 +1,13 @@
+diff --git a/Makefile.am b/Makefile.am
+index ff1f94b..cca6cf0 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -30,7 +30,7 @@ AM_CPPFLAGS += -I $(top_builddir)/lib
+ 
+ AM_CPPFLAGS += $(SSL_INCLUDES)
+ 
+-AM_CFLAGS = -Wstrict-prototypes
++AM_CFLAGS = -Wstrict-prototypes -fstack-protector-strong
+ AM_CFLAGS += $(WARNING_FLAGS)
+ AM_CFLAGS += $(OVS_CFLAGS)
+ 
