@@ -35,6 +35,7 @@ Documents and helpful information for Open vSwitch.
 %autosetup
 
 %build
+autoreconf
 ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=%{_localstatedir} \
     --libdir=%{_libdir} --enable-ssl --enable-shared
 %make_build
