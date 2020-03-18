@@ -3,9 +3,10 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        4
+Release:        5
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
+Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
@@ -200,6 +201,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Wed Mar 18 2020 zhangtao <zhangtao221@huawei.com> - 2.12.0-5
+- add stack protector
+
 * Tue Mar 17 2020 gulining <gulining1@huawei.com> - 2.12.0-4
 - remove extra spaces to resolve compile error
 
