@@ -3,12 +3,13 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        5
+Release:        6
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
-Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
-BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
+Patch0001:      0001-fix-dict-change-during-iteration.patch
+Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
+BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
 Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
 
@@ -32,7 +33,7 @@ Summary:        Helpful information for Open vSwitch
 Documents and helpful information for Open vSwitch.
 
 %prep
-%autosetup
+%autosetup -p1 
 
 %build
 autoreconf
@@ -56,8 +57,6 @@ install -p -m 644 -D selinux/openvswitch-custom.pp \
 rm \
     $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
-    $RPM_BUILD_ROOT/usr/bin/ovs-test \
-    $RPM_BUILD_ROOT/usr/bin/ovs-l3ping \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-l3ping.8 \
     $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
@@ -151,26 +150,20 @@ exit 0
 /etc/sysconfig/network-scripts/ifdown-ovs
 /usr/bin/ovs-appctl
 /usr/bin/ovs-dpctl
-/usr/bin/ovs-dpctl-top
 /usr/bin/ovs-docker
 /usr/bin/ovs-ofctl
-/usr/bin/ovs-parse-backtrace
 /usr/bin/ovs-pcap
 /usr/bin/ovs-pki
 /usr/bin/ovs-tcpdump
 /usr/bin/ovs-tcpundump
-/usr/bin/ovs-vlan-test
 /usr/bin/ovs-vsctl
 /usr/bin/ovsdb-client
 /usr/bin/ovsdb-tool
 /usr/bin/vtep-ctl
 %{_libdir}/lib*.so.*
-/usr/sbin/ovs-bugtool
 /usr/sbin/ovs-vswitchd
 /usr/sbin/ovsdb-server
-/usr/share/openvswitch/bugtool-plugins/
 /usr/share/openvswitch/python/
-/usr/share/openvswitch/scripts/ovs-bugtool-*
 /usr/share/openvswitch/scripts/ovs-check-dead-ifs
 /usr/share/openvswitch/scripts/ovs-ctl
 /usr/share/openvswitch/scripts/ovs-kmod-ctl
@@ -202,6 +195,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Thu Aug 20 2020 zhangjiapeng <zhangjiapeng9@huawei.com> - 2.12.0-6
+- Change the dependent python package from python2 to python3
+
 * Wed Mar 18 2020 zhangtao <zhangtao221@huawei.com> - 2.12.0-5
 - add stack protector
 
