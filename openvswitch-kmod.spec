@@ -14,7 +14,7 @@
 
 Name: openvswitch-kmod
 Version: 2.12.0
-Release: 1
+Release: 2
 Summary: Open vSwitch Kernel Modules
 License: GPLv2
 URL: http://www.openvswitch.org/
@@ -86,6 +86,7 @@ Patch63: netdev-afxdp-Avoid-removing-of-XDP-program-if-not-lo.patch
 Patch64: system-afxdp.at-Add-test-for-infinite-re-addition-of.patch
 Patch65: ovsdb-cluster.at-Wait-until-leader-is-elected-before.patch
 Patch66: ovsdb-raft-Fix-the-problem-when-cluster-restarted-af.patch
+Patch67: Modify-the-referenced-header-file.patch
 
 #Source1: openvswitch-init
 Buildroot: /tmp/openvswitch-xen-rpm
@@ -182,7 +183,11 @@ fi
 %attr(755,root,root) /usr/share/openvswitch/scripts/ovs-kmod-manage.sh
 
 %changelog
+* Tue Sep 01 2020 zhangjiapeng <zhangjiapeng9@huawei.com> - 2.12.0
+- Modify the referenced header file
+
 * Sat Dec 21 2019 openEuler Buildteam <buildteam@openeuler.org> - 2.12.0
 - Add opensource patch 
+
 * Fri Nov 22 2019 openEuler Buildteam <buildteam@openeuler.org> - 2.12.0
 - First build 
