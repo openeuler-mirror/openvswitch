@@ -1,0 +1,180 @@
+From df5db2a7a0fe9a4b6f5eafaada20a9b834aebbac Mon Sep 17 00:00:00 2001
+From: Flavio Leitner <fbl@sysclose.org>
+Date: Wed, 20 Nov 2019 11:21:13 -0300
+Subject: ofproto-dpif: Allow IPv6 ND Extensions only if supported
+
+The IPv6 ND Extensions is only implemented in userspace datapath,
+but nothing prevents that to be used with other datapaths.
+
+This patch probes the datapath and only allows if the support
+is available.
+
+Fixes: 9b2b84973 ("Support for match & set ICMPv6 reserved and options type fields")
+Acked-by: Eelco Chaudron <echaudro@redhat.com>
+Acked-by: Aaron Conole <aconole@redhat.com>
+Signed-off-by: Flavio Leitner <fbl@sysclose.org>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ lib/odp-util.c         | 17 ++++++++-------
+ lib/odp-util.h         |  6 ++++-
+ ofproto/ofproto-dpif.c | 59 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ tests/test-odp.c       |  1 +
+ 4 files changed, 73 insertions(+), 10 deletions(-)
+
+diff --git a/lib/odp-util.c b/lib/odp-util.c
+index 84ea4c148..df06f8026 100644
+--- a/lib/odp-util.c
++++ b/lib/odp-util.c
+@@ -6180,23 +6180,24 @@ odp_flow_key_from_flow__(const struct odp_flow_key_parms *parms,
+                 && (!export_mask || (data->tp_src == htons(0xff)
+                                      && data->tp_dst == htons(0xff)))) {
+                 struct ovs_key_nd *nd_key;
+-                struct ovs_key_nd_extensions *nd_ext_key;
+                 nd_key = nl_msg_put_unspec_uninit(buf, OVS_KEY_ATTR_ND,
+                                                     sizeof *nd_key);
+                 nd_key->nd_target = data->nd_target;
+                 nd_key->nd_sll = data->arp_sha;
+                 nd_key->nd_tll = data->arp_tha;
+ 
+-                /* Add ND Extensions Attr only if reserved field
++                /* Add ND Extensions Attr only if supported and reserved field
+                  * or options type is set. */
+-                if (data->igmp_group_ip4 != 0 ||
+-                    data->tcp_flags != 0) {
+-                    nd_ext_key =
+-                         nl_msg_put_unspec_uninit(buf,
++                if (parms->support.nd_ext) {
++                    struct ovs_key_nd_extensions *nd_ext_key;
++
++                    if (data->igmp_group_ip4 != 0 || data->tcp_flags != 0) {
++                        nd_ext_key = nl_msg_put_unspec_uninit(buf,
+                                             OVS_KEY_ATTR_ND_EXTENSIONS,
+                                             sizeof *nd_ext_key);
+-                    nd_ext_key->nd_reserved = data->igmp_group_ip4;
+-                    nd_ext_key->nd_options_type = ntohs(data->tcp_flags);
++                        nd_ext_key->nd_reserved = data->igmp_group_ip4;
++                        nd_ext_key->nd_options_type = ntohs(data->tcp_flags);
++                    }
+                 }
+             }
+         }
+diff --git a/lib/odp-util.h b/lib/odp-util.h
+index a03e82532..f15e258e6 100644
+--- a/lib/odp-util.h
++++ b/lib/odp-util.h
+@@ -203,7 +203,11 @@ int odp_flow_from_string(const char *s, const struct simap *port_names,
+                                                                              \
+     /* Conntrack original direction tuple matching * supported. */           \
+     ODP_SUPPORT_FIELD(bool, ct_orig_tuple, "CT orig tuple")                  \
+-    ODP_SUPPORT_FIELD(bool, ct_orig_tuple6, "CT orig tuple for IPv6")
++    ODP_SUPPORT_FIELD(bool, ct_orig_tuple6, "CT orig tuple for IPv6")        \
++                                                                             \
++    /* If true, it means that the datapath supports the IPv6 Neigh           \
++     * Discovery Extension bits. */                                          \
++    ODP_SUPPORT_FIELD(bool, nd_ext, "IPv6 ND Extension")
+ 
+ /* Indicates support for various fields. This defines how flows will be
+  * serialised. */
+diff --git a/ofproto/ofproto-dpif.c b/ofproto/ofproto-dpif.c
+index a8c7369d0..c7c70062c 100644
+--- a/ofproto/ofproto-dpif.c
++++ b/ofproto/ofproto-dpif.c
+@@ -1377,6 +1377,55 @@ check_max_dp_hash_alg(struct dpif_backer *backer)
+     return max_alg;
+ }
+ 
++/* Tests whether 'backer''s datapath supports IPv6 ND extensions.
++ * Only userspace datapath support OVS_KEY_ATTR_ND_EXTENSIONS in keys.
++ *
++ * Returns false if 'backer' definitely does not support matching and
++ * setting reserved and options type, true if it seems to support. */
++static bool
++check_nd_extensions(struct dpif_backer *backer)
++{
++    struct eth_header *eth;
++    struct ofpbuf actions;
++    struct dpif_execute execute;
++    struct dp_packet packet;
++    struct flow flow;
++    int error;
++    struct ovs_key_nd_extensions key, mask;
++
++    ofpbuf_init(&actions, 64);
++    memset(&key, 0x53, sizeof key);
++    memset(&mask, 0x7f, sizeof mask);
++    commit_masked_set_action(&actions, OVS_KEY_ATTR_ND_EXTENSIONS, &key, &mask,
++                             sizeof key);
++
++    /* Compose a dummy ethernet packet. */
++    dp_packet_init(&packet, ETH_HEADER_LEN);
++    eth = dp_packet_put_zeros(&packet, ETH_HEADER_LEN);
++    eth->eth_type = htons(0x1234);
++
++    flow_extract(&packet, &flow);
++
++    /* Execute the actions.  On datapaths without support fails with EINVAL. */
++    execute.actions = actions.data;
++    execute.actions_len = actions.size;
++    execute.packet = &packet;
++    execute.flow = &flow;
++    execute.needs_help = false;
++    execute.probe = true;
++    execute.mtu = 0;
++
++    error = dpif_execute(backer->dpif, &execute);
++
++    dp_packet_uninit(&packet);
++    ofpbuf_uninit(&actions);
++
++    VLOG_INFO("%s: Datapath %s IPv6 ND Extensions", dpif_name(backer->dpif),
++              error ? "does not support" : "supports");
++
++    return !error;
++}
++
+ #define CHECK_FEATURE__(NAME, SUPPORT, FIELD, VALUE, ETHTYPE)               \
+ static bool                                                                 \
+ check_##NAME(struct dpif_backer *backer)                                    \
+@@ -1447,10 +1496,10 @@ check_support(struct dpif_backer *backer)
+     backer->rt_support.odp.ct_zone = check_ct_zone(backer);
+     backer->rt_support.odp.ct_mark = check_ct_mark(backer);
+     backer->rt_support.odp.ct_label = check_ct_label(backer);
+-
+     backer->rt_support.odp.ct_state_nat = check_ct_state_nat(backer);
+     backer->rt_support.odp.ct_orig_tuple = check_ct_orig_tuple(backer);
+     backer->rt_support.odp.ct_orig_tuple6 = check_ct_orig_tuple6(backer);
++    backer->rt_support.odp.nd_ext = check_nd_extensions(backer);
+ }
+ 
+ static int
+@@ -4453,6 +4502,14 @@ check_actions(const struct ofproto_dpif *ofproto,
+                                        "ct original direction tuple");
+                 return OFPERR_NXBAC_CT_DATAPATH_SUPPORT;
+             }
++        } else if (!support->nd_ext && ofpact->type == OFPACT_SET_FIELD) {
++            const struct mf_field *dst = ofpact_get_mf_dst(ofpact);
++
++            if (dst->id == MFF_ND_RESERVED || dst->id == MFF_ND_OPTIONS_TYPE) {
++                report_unsupported_act("set field",
++                                       "setting IPv6 ND Extensions fields");
++                return OFPERR_OFPBAC_BAD_SET_ARGUMENT;
++            }
+         }
+     }
+ 
+diff --git a/tests/test-odp.c b/tests/test-odp.c
+index 09fec706a..0ddfd4070 100644
+--- a/tests/test-odp.c
++++ b/tests/test-odp.c
+@@ -65,6 +65,7 @@ parse_keys(bool wc_keys)
+                     .ct_mark = true,
+                     .ct_label = true,
+                     .max_vlan_headers = SIZE_MAX,
++                    .nd_ext = true,
+                 },
+             };
+ 
+-- 
+2.14.1
+
+

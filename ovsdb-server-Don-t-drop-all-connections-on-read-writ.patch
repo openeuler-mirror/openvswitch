@@ -1,0 +1,92 @@
+From 8190df660ca6e8f58a579323bd5503c9357c9f21 Mon Sep 17 00:00:00 2001
+From: Numan Siddique <nusiddiq@redhat.com>
+Date: Mon, 14 Oct 2019 20:50:02 +0530
+Subject: ovsdb-server: Don't drop all connections on read/write status change.
+
+The commit [1] force drops all connections when the db read/write status changes.
+Prior to the commit [1], when there was read/write status change, the existing
+jsonrpc sessions with 'db_change_aware' set to true, were not updated with the
+changed 'read_only' value. If the db status was changed to 'standby', the existing
+clients could still write to the db.
+
+In the case of pacemaker OVN HA, OVN OCF script 'start' action starts the
+ovsdb-servers in read-only state and later, it sets to read-write in the
+'promote' action. We have observed that if some ovn-controllers connect to
+the SB ovsdb-server (in read-only state) just before the 'promote' action,
+the connection is not reset all the times and these ovn-controllers remain connected
+to the SB ovsdb-server in read-only state all the time. Even though
+the commit [1] calls 'ovsdb_jsonrpc_server_reconnect()' with 'forced' flag
+set to true when the db read/write status changes, somehow the FSM misses resetting
+the connections of these ovn-controllers.
+
+I think this needs to be addressed in the FSM. This patch doesn't address
+this FSM issue. Instead it changes the behavior of 'ovsdb_jsonrpc_server_set_read_only()'
+by setting the 'read_only' flag of all the jsonrpc sessions instead of forcefully
+resetting the connection.
+
+I think there is no need to reset the connection. In large scale production
+deployements with OVN, this results in unnecessary waste of CPU cycles as ovn-controllers
+will have to connect twice - once during 'start' action and again during 'promote'.
+
+[1] - 2a9679e3b2c6("ovsdb-server: drop all connections on read/write status change")
+
+Acked-by: Dumitru Ceara <dceara@redhat.com>
+Signed-off-by: Numan Siddique <nusiddiq@redhat.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ovsdb/jsonrpc-server.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/ovsdb/jsonrpc-server.c b/ovsdb/jsonrpc-server.c
+index ddbbc2e94..4e2dfc3d7 100644
+--- a/ovsdb/jsonrpc-server.c
++++ b/ovsdb/jsonrpc-server.c
+@@ -80,6 +80,8 @@ static void ovsdb_jsonrpc_session_unlock_all(struct ovsdb_jsonrpc_session *);
+ static void ovsdb_jsonrpc_session_unlock__(struct ovsdb_lock_waiter *);
+ static void ovsdb_jsonrpc_session_send(struct ovsdb_jsonrpc_session *,
+                                        struct jsonrpc_msg *);
++static void ovsdb_jsonrpc_session_set_readonly_all(
++    struct ovsdb_jsonrpc_remote *remote, bool read_only);
+ 
+ /* Triggers. */
+ static void ovsdb_jsonrpc_trigger_create(struct ovsdb_jsonrpc_session *,
+@@ -365,10 +367,13 @@ ovsdb_jsonrpc_server_set_read_only(struct ovsdb_jsonrpc_server *svr,
+ {
+     if (svr->read_only != read_only) {
+         svr->read_only = read_only;
+-        ovsdb_jsonrpc_server_reconnect(svr, true,
+-                                       xstrdup(read_only
+-                                               ? "making server read-only"
+-                                               : "making server read/write"));
++
++        struct shash_node *node;
++        SHASH_FOR_EACH (node, &svr->remotes) {
++            struct ovsdb_jsonrpc_remote *remote = node->data;
++
++            ovsdb_jsonrpc_session_set_readonly_all(remote, read_only);
++        }
+     }
+ }
+ 
+@@ -670,6 +675,17 @@ ovsdb_jsonrpc_session_reconnect_all(struct ovsdb_jsonrpc_remote *remote,
+     }
+ }
+ 
++static void
++ovsdb_jsonrpc_session_set_readonly_all(struct ovsdb_jsonrpc_remote *remote,
++                                       bool read_only)
++{
++    struct ovsdb_jsonrpc_session *s;
++
++    LIST_FOR_EACH (s, node, &remote->sessions) {
++        s->read_only = read_only;
++    }
++}
++
+ /* Sets the options for all of the JSON-RPC sessions managed by 'remote' to
+  * 'options'.
+  *
+-- 
+2.14.1
+
+
