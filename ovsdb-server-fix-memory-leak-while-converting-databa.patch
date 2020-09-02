@@ -1,0 +1,61 @@
+From c70272a165b018ac6808fe27bba0b461ed2894b5 Mon Sep 17 00:00:00 2001
+From: Damijan Skvarc <damjan.skvarc@gmail.com>
+Date: Fri, 25 Oct 2019 14:22:58 +0200
+Subject: ovsdb-server: fix memory leak while converting database
+
+Memory leak happens while converting existing database into new
+database according to the specified schema (ovsdb-client convert
+new-schema). Memory leak was detected by valgrind while executing
+functional test "schema conversion online - clustered"
+
+==16202== 96 bytes in 6 blocks are definitely lost in loss record 326 of 399
+==16202==    at 0x4C2DB8F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==16202==    by 0x44A5D4: xmalloc (util.c:138)
+==16202==    by 0x4377A6: alloc_default_atoms (ovsdb-data.c:315)
+==16202==    by 0x437F18: ovsdb_datum_init_default (ovsdb-data.c:918)
+==16202==    by 0x413D82: ovsdb_row_create (row.c:59)
+==16202==    by 0x40AA53: ovsdb_convert_table (file.c:220)
+==16202==    by 0x40AA53: ovsdb_convert (file.c:275)
+==16202==    by 0x416BE1: ovsdb_trigger_try (trigger.c:255)
+==16202==    by 0x40D29E: ovsdb_jsonrpc_trigger_create (jsonrpc-server.c:1119)
+==16202==    by 0x40D29E: ovsdb_jsonrpc_session_got_request (jsonrpc-server.c:986)
+==16202==    by 0x40D29E: ovsdb_jsonrpc_session_run (jsonrpc-server.c:556)
+==16202==    by 0x40D29E: ovsdb_jsonrpc_session_run_all (jsonrpc-server.c:586)
+==16202==    by 0x40D29E: ovsdb_jsonrpc_server_run (jsonrpc-server.c:401)
+==16202==    by 0x40682E: main_loop (ovsdb-server.c:209)
+==16202==    by 0x40682E: main (ovsdb-server.c:460)
+
+The problem was in ovsdb_datum_convert() function, which overrides
+pointers to datum memory allocated in ovsdb_row_create() function.
+Fix was done by freeing this memory before ovsdb_datum_convert()
+is called.
+
+Signed-off-by: Damijan Skvarc <damjan.skvarc@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ovsdb/file.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/ovsdb/file.c b/ovsdb/file.c
+index 8d16b097b..0af077fce 100644
+--- a/ovsdb/file.c
++++ b/ovsdb/file.c
+@@ -235,10 +235,14 @@ ovsdb_convert_table(struct ovsdb_txn *txn,
+                 continue;
+             }
+ 
++            ovsdb_datum_destroy(&dst_row->fields[dst_column->index],
++                                &dst_column->type);
++
+             struct ovsdb_error *error = ovsdb_datum_convert(
+                 &dst_row->fields[dst_column->index], &dst_column->type,
+                 &src_row->fields[src_column->index], &src_column->type);
+             if (error) {
++                ovsdb_datum_init_empty(&dst_row->fields[dst_column->index]);
+                 ovsdb_row_destroy(dst_row);
+                 return error;
+             }
+-- 
+2.14.1
+
+

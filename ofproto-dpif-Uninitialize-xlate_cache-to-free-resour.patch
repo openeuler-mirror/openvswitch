@@ -1,0 +1,49 @@
+From f1afa83349efb7622d986574211f3bd24d16e642 Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Wed, 11 Sep 2019 14:18:28 -0700
+Subject: ofproto-dpif: Uninitialize 'xlate_cache' to free resources
+
+Valgrind reported:
+
+1210: ofproto-dpif - continuation after clone
+
+==32205== 4,392 (1,440 direct, 2,952 indirect) bytes in 12 blocks are definitely lost in loss record 359 of 362
+==32205==    at 0x4C2DB8F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==32205==    by 0x532574: xmalloc (util.c:138)
+==32205==    by 0x4F98CA: ofpbuf_init (ofpbuf.c:123)
+==32205==    by 0x42C07B: nxt_resume (ofproto-dpif.c:5110)
+==32205==    by 0x41796F: handle_nxt_resume (ofproto.c:3677)
+==32205==    by 0x424583: handle_single_part_openflow (ofproto.c:8473)
+==32205==    by 0x424583: handle_openflow (ofproto.c:8606)
+==32205==    by 0x4579E2: ofconn_run (connmgr.c:1318)
+==32205==    by 0x4579E2: connmgr_run (connmgr.c:355)
+==32205==    by 0x41E0F5: ofproto_run (ofproto.c:1845)
+==32205==    by 0x40BA63: bridge_run__ (bridge.c:2971)
+==32205==    by 0x410CF3: bridge_run (bridge.c:3029)
+==32205==    by 0x407614: main (ovs-vswitchd.c:127)
+
+This is because 'xcache' was not destroyed properly. This patch fixes it.
+
+Acked-by: William Tu <u9012063@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ ofproto/ofproto-dpif.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/ofproto/ofproto-dpif.c b/ofproto/ofproto-dpif.c
+index 751535249..46fa13571 100644
+--- a/ofproto/ofproto-dpif.c
++++ b/ofproto/ofproto-dpif.c
+@@ -5148,6 +5148,7 @@ nxt_resume(struct ofproto *ofproto_,
+     /* Clean up. */
+     ofpbuf_uninit(&odp_actions);
+     dp_packet_uninit(&packet);
++    xlate_cache_uninit(&xcache);
+ 
+     return error;
+ }
+-- 
+2.14.1
+
+

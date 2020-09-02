@@ -1,0 +1,59 @@
+From 069c80b47ff2fa4e7b4e455568c995e4fe8f3a18 Mon Sep 17 00:00:00 2001
+From: Ilya Maximets <i.maximets@ovn.org>
+Date: Wed, 9 Oct 2019 16:23:31 +0200
+Subject: netdev-afxdp: Update memory locking limits unconditionally.
+
+Any type of AF_XDP socket in all modes implies creation of BPF map of
+type BPF_MAP_TYPE_XSKMAP.  This leads to BPF_MAP_CREATE syscall and
+subsequently 'xsk_map_alloc()' function that will charge required
+memory from the memlock limit and fail with EPERM if we're trying
+to allocate more.
+
+On my system with 64K bytes of max locked memory by default, OVS
+frequently starts to fail after addition of 3rd afxdp port in SKB
+mode:
+
+  netdev_afxdp|ERR|xsk_socket__create failed (Operation not permitted)
+                   mode: SKB qid: 0
+
+Fixes: 0de1b425962d ("netdev-afxdp: add new netdev type for AF_XDP.")
+Signed-off-by: Ilya Maximets <i.maximets@ovn.org>
+Signed-off-by: William Tu <u9012063@gmail.com>
+---
+ lib/netdev-afxdp.c | 19 ++++++-------------
+ 1 file changed, 6 insertions(+), 13 deletions(-)
+
+diff --git a/lib/netdev-afxdp.c b/lib/netdev-afxdp.c
+index 47b4af59d..7b452c459 100644
+--- a/lib/netdev-afxdp.c
++++ b/lib/netdev-afxdp.c
+@@ -536,19 +536,12 @@ netdev_afxdp_reconfigure(struct netdev *netdev)
+     netdev->n_rxq = dev->requested_n_rxq;
+     netdev->n_txq = netdev->n_rxq;
+ 
+-    if (dev->requested_xdpmode == XDP_ZEROCOPY) {
+-        dev->xdpmode = XDP_ZEROCOPY;
+-        VLOG_INFO("AF_XDP device %s in DRV mode.", netdev_get_name(netdev));
+-        if (setrlimit(RLIMIT_MEMLOCK, &r)) {
+-            VLOG_ERR("ERROR: setrlimit(RLIMIT_MEMLOCK): %s",
+-                      ovs_strerror(errno));
+-        }
+-    } else {
+-        dev->xdpmode = XDP_COPY;
+-        VLOG_INFO("AF_XDP device %s in SKB mode.", netdev_get_name(netdev));
+-        /* TODO: set rlimit back to previous value
+-         * when no device is in DRV mode.
+-         */
++    dev->xdpmode = dev->requested_xdpmode;
++    VLOG_INFO("%s: Setting XDP mode to %s.", netdev_get_name(netdev),
++              dev->xdpmode == XDP_ZEROCOPY ? "DRV" : "SKB");
++
++    if (setrlimit(RLIMIT_MEMLOCK, &r)) {
++        VLOG_ERR("setrlimit(RLIMIT_MEMLOCK) failed: %s", ovs_strerror(errno));
+     }
+ 
+     err = xsk_configure_all(netdev);
+-- 
+2.14.1
+
+

@@ -1,0 +1,90 @@
+From 817fae6b5482911db7610ab7cd5fbd5ad4d6ad36 Mon Sep 17 00:00:00 2001
+From: Yifeng Sun <pkusunyifeng@gmail.com>
+Date: Fri, 11 Oct 2019 14:49:14 -0700
+Subject: rhel: Support RHEL7.7 build and packaging
+
+This patch provides essential fixes for OVS to support
+RHEL7.7's new kernel.
+
+make rpm-fedora-kmod \
+RPMBUILD_OPT='-D "kversion 3.10.0-1062.1.2.el7.x86_64"'
+
+Tested-by: Greg Rose <gvrose8192@gmail.com>
+Reviewed-by: Greg Rose <gvrose8192@gmail.com>
+Signed-off-by: Yifeng Sun <pkusunyifeng@gmail.com>
+Signed-off-by: Ben Pfaff <blp@ovn.org>
+---
+ rhel/openvswitch-kmod-fedora.spec.in                  |  9 +++++----
+ rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh | 14 ++++++++++----
+ 2 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/rhel/openvswitch-kmod-fedora.spec.in b/rhel/openvswitch-kmod-fedora.spec.in
+index b3588982e..fbb836699 100644
+--- a/rhel/openvswitch-kmod-fedora.spec.in
++++ b/rhel/openvswitch-kmod-fedora.spec.in
+@@ -12,8 +12,9 @@
+ # Use the kversion macro such as
+ # RPMBUILD_OPT='-D "kversion 3.10.0-693.1.1.el7.x86_64 3.10.0-693.17.1.el7.x86_64"'
+ # to build package for mulitple kernel versions in the same package
+-# This only works for kernel 3.10.0 major revision 957 (RHEL 7.6),
+-# major revision 693 (RHEL 7.4) and major revision 327 (RHEL 7.2).
++# This only works for kernel 3.10.0 major revision 1062 (RHEL 7.7),
++# major revision 957 (RHEL 7.6), major revision 693 (RHEL 7.4) and
++# major revision 327 (RHEL 7.2).
+ # By default, build against the current running kernel version
+ #%define kernel 3.1.5-1.fc16.x86_64
+ #define kernel %{kernel_source}
+@@ -92,8 +93,8 @@ if grep -qs "suse" /etc/os-release; then
+     fi
+ elif [ "$mainline_major" = "3" ] && [ "$mainline_minor" = "10" ] &&
+      { [ "$major_rev" = "327" ] || [ "$major_rev" = "693" ] || \
+-       [ "$major_rev" = "957" ]; }; then
+-    # For RHEL 7.2, 7.4 and 7.6
++       [ "$major_rev" = "957" ] || [ "$major_rev" == "1062" ]; }; then
++    # For RHEL 7.2, 7.4, 7.6 and 7.7
+     if [ -x "%{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh" ]; then
+         %{_datadir}/openvswitch/scripts/ovs-kmod-manage.sh
+     fi
+diff --git a/rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh b/rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh
+index 8464a6fbc..a252b391e 100644
+--- a/rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh
++++ b/rhel/usr_share_openvswitch_scripts_ovs-kmod-manage.sh
+@@ -15,9 +15,10 @@
+ # limitations under the License.
+ 
+ # This script is intended to be used on the following kernels.
+-#   - 3.10.0 major revision 327 (RHEL 7.2)
+-#   - 3.10.0 major revision 693 (RHEL 7.4)
+-#   - 3.10.0 major revision 957 (RHEL 7.6)
++#   - 3.10.0 major revision 327  (RHEL 7.2)
++#   - 3.10.0 major revision 693  (RHEL 7.4)
++#   - 3.10.0 major revision 957  (RHEL 7.6)
++#   - 3.10.0 major revision 1062 (RHEL 7.7)
+ #   - 4.4.x,  x >= 73           (SLES 12 SP3)
+ #   - 4.12.x, x >= 14           (SLES 12 SP4).
+ # It is packaged in the openvswitch kmod RPM and run in the post-install
+@@ -100,6 +101,11 @@ if [ "$mainline_major" = "3" ] && [ "$mainline_minor" = "10" ]; then
+         comp_ver=10
+         ver_offset=4
+         installed_ver="$minor_rev"
++    elif [ "$major_rev" = "1062" ]; then
++#        echo "rhel77"
++        comp_ver=10
++        ver_offset=4
++        installed_ver="$minor_rev"
+     fi
+ elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "4" ]; then
+     if [ "$mainline_patch" -ge "73" ]; then
+@@ -111,7 +117,7 @@ elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "4" ]; then
+ elif [ "$mainline_major" = "4" ] && [ "$mainline_minor" = "12" ]; then
+     if [ "$mainline_patch" -ge "14" ]; then
+ #        echo "sles12sp4"
+-        comp_ver=14
++        comp_ver=1
+         ver_offset=2
+         installed_ver="$mainline_patch"
+     fi
+-- 
+2.14.1
+
+
