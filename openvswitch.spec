@@ -3,12 +3,13 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        9
+Release:        10
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Patch0001:      0001-fix-dict-change-during-iteration.patch
 Patch0002:      0002-Remove-unsupported-permission-names.patch
+Patch0003:      0003-Fallback-to-read-proc-net-dev-on-linux.patch
 Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
 BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
@@ -93,6 +94,12 @@ install -m 0644 lib/*.h                    $RPM_BUILD_ROOT/%{_includedir}/openvs
 install -D -m 0644 lib/.libs/libopenvswitch.a \
     $RPM_BUILD_ROOT/%{_libdir}/libopenvswitch.a
 
+install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
+cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
+    $RPM_BUILD_ROOT%{python3_sitelib}
+
+rm -rf $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/
+
 %clean
 rm -rf $RPM_BUILD_ROOT
 
@@ -164,7 +171,8 @@ exit 0
 %{_libdir}/lib*.so.*
 /usr/sbin/ovs-vswitchd
 /usr/sbin/ovsdb-server
-/usr/share/openvswitch/python/
+%{python3_sitelib}/ovs
+%{python3_sitelib}/ovstest
 /usr/share/openvswitch/scripts/ovs-check-dead-ifs
 /usr/share/openvswitch/scripts/ovs-ctl
 /usr/share/openvswitch/scripts/ovs-kmod-ctl
@@ -196,6 +204,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Tue Sep 24 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-10
+- Fix ovs-tcpdump import error
+
 * Tue Sep 22 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-9
 - Remove openvswitch-kmod package
 
