@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        5
+Release:        6
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -202,6 +202,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Fri Sep 25 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-6
+- Remove openvswitch-kmod package
+
 * Wed Mar 18 2020 zhangtao <zhangtao221@huawei.com> - 2.12.0-5
 - add stack protector
 
