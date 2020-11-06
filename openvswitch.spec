@@ -3,10 +3,11 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        6
+Release:        7
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
+Patch0001:      0001-Remove-unsupported-permission-names.patch
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
@@ -32,7 +33,7 @@ Summary:        Helpful information for Open vSwitch
 Documents and helpful information for Open vSwitch.
 
 %prep
-%autosetup
+%autosetup -p1
 
 %build
 autoreconf
@@ -202,6 +203,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Fri Nov 6 2020 zhangjiapeng <zhangjiapeng9@huawei.com> - 2.12.0-7
+- Remove unsupported permission names
+
 * Fri Sep 25 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-6
 - Remove openvswitch-kmod package
 
