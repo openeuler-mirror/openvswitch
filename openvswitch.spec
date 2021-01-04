@@ -1,9 +1,14 @@
+# Enable Python 3 by specifying '--with build_python3'.
+# This is enabled by default for versions of the distribution that
+# have Python 3 by default.
+%bcond_with build_python3
+
 Name:           openvswitch
 Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        10
+Release:        11
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -12,6 +17,9 @@ Patch0002:      0002-Remove-unsupported-permission-names.patch
 Patch0003:      0003-Fallback-to-read-proc-net-dev-on-linux.patch
 Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
 BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
+%if %{with build_python3}
+BuildRequires:  python3-devel
+%endif
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
 Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
 
@@ -33,6 +41,19 @@ Summary:        Helpful information for Open vSwitch
 
 %description help
 Documents and helpful information for Open vSwitch.
+
+%if %{with build_python3}
+%package -n python3-openvswitch
+Summary: Open vSwitch python3 bindings
+License: ASL 2.0
+BuildArch: noarch
+Requires: python3
+Requires: python3-six
+%{?python_provide:%python_provide python3-openvswitch = %{version}-%{release}}
+
+%description -n python3-openvswitch
+Python bindings for the Open vSwitch database
+%endif
 
 %prep
 %autosetup -p1 
@@ -188,6 +209,11 @@ exit 0
 /var/log/openvswitch
 %{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
 
+%if %{with build_python3}
+%files -n python3-openvswitch
+%{python3_sitelib}/ovs
+%endif
+
 %files devel
 %{_libdir}/lib*.so
 %{_libdir}/lib*.a
@@ -204,6 +230,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Tue Jan 05 2021 luosuwang <oenetdev@huawri.com> - 2.12.0-11
+- Add the option of compiling python3-openvswitch package
+
 * Tue Sep 24 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-10
 - Fix ovs-tcpdump import error
 
