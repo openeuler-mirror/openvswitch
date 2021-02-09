@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0
-Release:        12
+Release:        13
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -113,6 +113,16 @@ install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
 cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
     $RPM_BUILD_ROOT%{python3_sitelib}
 
+pushd python
+(
+export CPPFLAGS="-I ../include"
+export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
+%py3_build
+%py3_install
+[ -f "$RPM_BUILD_ROOT/%{python3_sitearch}/ovs/_json$(python3-config --extension-suffix)" ]
+)
+popd
+
 rm -rf $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/
 
 %clean
@@ -188,6 +198,7 @@ exit 0
 /usr/sbin/ovsdb-server
 %{python3_sitelib}/ovs
 %{python3_sitelib}/ovstest
+%{python3_sitearch}/ovs
 /usr/share/openvswitch/scripts/ovs-check-dead-ifs
 /usr/share/openvswitch/scripts/ovs-ctl
 /usr/share/openvswitch/scripts/ovs-kmod-ctl
@@ -205,6 +216,8 @@ exit 0
 
 %files -n python3-openvswitch
 %{python3_sitelib}/ovs
+%{python3_sitearch}/ovs-*.egg-info
+%doc LICENSE
 
 %files devel
 %{_libdir}/lib*.so
@@ -222,13 +235,16 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
-* Thu Jan 21 2021 lupsuwang <oenetdev@huawei.com> - 2.12.0-12
+* Sun Feb 07 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-13
+- Add python3.Xdist(ovs)
+
+* Thu Jan 21 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-12
 - Remove build_python3 option to complie python3-openvswitch package by default
 
 * Tue Jan 05 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-11
 - Add the option of compiling python3-openvswitch package
 
-* Tue Sep 24 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-10
+* Thu Sep 24 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-10
 - Fix ovs-tcpdump import error
 
 * Tue Sep 22 2020 luosuwang <oenetdev@huawei.com> - 2.12.0-9
