@@ -235,7 +235,7 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
-* Sun Feb 07 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-13
+* Wed Feb 24 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-13
 - Add python3.Xdist(ovs)
 
 * Thu Jan 21 2021 luosuwang <oenetdev@huawei.com> - 2.12.0-12
