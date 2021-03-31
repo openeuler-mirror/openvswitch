@@ -3,13 +3,15 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        8
+Release:        9
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Patch0001:      0001-Remove-unsupported-permission-names.patch
 Patch0002:      CVE-2020-35498-pre.patch
 Patch0003:      CVE-2020-35498.patch
+Patch0004:      CVE-2020-27827.patch
+Patch0005:      CVE-2015-8011.patch
 
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
@@ -206,6 +208,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Wed Mar 31 2021 wangyue <wangyue92@huawei.com> - 2.12.0-9
+- fix CVE-2020-27827 CVE-2015-8011
+
 * Mon Mar 01 2021 wangyue <wangyue92@huawei.com> - 2.12.0-8
 - fix CVE-2020-35498
 
