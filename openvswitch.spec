@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        10
+Release:        11
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -43,16 +43,42 @@ Documents and helpful information for Open vSwitch.
 
 %build
 autoreconf
-./configure --prefix=/usr --sysconfdir=/etc --localstatedir=%{_localstatedir} \
-    --libdir=%{_libdir} --enable-ssl --enable-shared
+./configure \
+        --prefix=/usr \
+        --sysconfdir=/etc \
+        --localstatedir=%{_localstatedir} \
+        --libdir=%{_libdir} \
+        --enable-ssl \
+        --enable-shared \
+        --with-pkidir=%{_sharedstatedir}/openvswitch/pki \
+        PYTHON=%{__python2}
+
+build-aux/dpdkstrip.py \
+        --nodpdk \
+        < rhel/usr_lib_systemd_system_ovs-vswitchd.service.in \
+        > rhel/usr_lib_systemd_system_ovs-vswitchd.service
+
 %make_build
 make selinux-policy
 
 %install
-%make_install
+rm -rf $RPM_BUILD_ROOT
+make install DESTDIR=$RPM_BUILD_ROOT
 
-install -D -m 0755 rhel/etc_init.d_openvswitch                           $RPM_BUILD_ROOT/etc/init.d/openvswitch
+install -d -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch
+
+install -p -D -m 0644 \
+        rhel/usr_share_openvswitch_scripts_systemd_sysconfig.template \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/openvswitch
+for service in openvswitch ovsdb-server ovs-vswitchd; do
+        install -p -D -m 0644 \
+                        rhel/usr_lib_systemd_system_${service}.service \
+                        $RPM_BUILD_ROOT%{_unitdir}/${service}.service
+done
+
+install -m 0755 rhel/etc_init.d_openvswitch                              $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/openvswitch.init
 install -D -m 0644 rhel/etc_logrotate.d_openvswitch                      $RPM_BUILD_ROOT/etc/logrotate.d/openvswitch
+install -D -m 0644 rhel/etc_openvswitch_default.conf                     $RPM_BUILD_ROOT/%{_sysconfdir}/openvswitch/default.conf
 install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifup-ovs           $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifup-ovs
 install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifdown-ovs         $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifdown-ovs
 install -D -m 0644 rhel/usr_share_openvswitch_scripts_sysconfig.template $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/sysconfig.template
@@ -100,44 +126,54 @@ install -m 0644 lib/*.h                    $RPM_BUILD_ROOT/%{_includedir}/openvs
 install -D -m 0644 lib/.libs/libopenvswitch.a \
     $RPM_BUILD_ROOT/%{_libdir}/libopenvswitch.a
 
+install -d -m 0755 $RPM_BUILD_ROOT/%{_sharedstatedir}/openvswitch
+
+touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/conf.db
+touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/.conf.db.~lock~
+touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
+
+install -d $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/
+
+install -p -D -m 0755 \
+        rhel/usr_share_openvswitch_scripts_ovs-systemd-reload \
+        $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovs-systemd-reload
+
 %clean
 rm -rf $RPM_BUILD_ROOT
-
-%post
-SYSCONFIG=/etc/sysconfig/openvswitch
-TEMPLATE=/usr/share/openvswitch/scripts/sysconfig.template
-if [ ! -e $SYSCONFIG ]; then
-    cp $TEMPLATE $SYSCONFIG
-else
-    for var in $(awk -F'[ :]' '/^# [_A-Z0-9]+:/{print $2}' $TEMPLATE)
-    do
-        if ! grep $var $SYSCONFIG >/dev/null 2>&1; then
-            echo >> $SYSCONFIG
-            sed -n "/$var:/,/$var=/p" $TEMPLATE >> $SYSCONFIG
-        fi
-    done
-fi
-
-/sbin/chkconfig --add openvswitch
-/sbin/chkconfig openvswitch on
-
-%selinux_modules_install -s targeted %{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
 
 %pre
 %selinux_relabel_pre -s targeted
 
 %preun
-if [ "$1" = "0" ]; then     # $1 = 0 for uninstall
-    /sbin/service openvswitch stop
-    /sbin/chkconfig --del openvswitch
-fi
+%if 0%{?systemd_preun:1}
+    %systemd_preun %{name}.service
+%else
+    if [ $1 -eq 0 ] ; then
+        # Package removal, not upgrade
+        /bin/systemctl --no-reload disable %{name}.service >/dev/null 2>&1 || :
+        /bin/systemctl stop %{name}.service >/dev/null 2>&1 || :
+    fi
+%endif
+
+%post
+%if 0%{?systemd_post:1}
+    # This may not enable openvswitch service or do daemon-reload.
+    %systemd_post %{name}.service
+%else
+    # Package install, not upgrade
+    if [ $1 -eq 1 ]; then
+        /bin/systemctl daemon-reload >dev/null || :
+    fi
+%endif
+
+%selinux_modules_install -s targeted /usr/share/selinux/packages/%{name}/openvswitch-custom.pp
 
 %postun
-if [ "$1" = "0" ]; then     # $1 = 0 for uninstall
-    rm -f /etc/openvswitch/conf.db
-    rm -f /etc/sysconfig/openvswitch
-    rm -f /etc/openvswitch/vswitchd.cacert
-fi
+%if 0%{?systemd_postun:1}
+    %systemd_postun %{name}.service
+%else
+    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
+%endif
 
 if [ $1 -eq 0 ] ; then
   %selinux_modules_uninstall -s targeted openvswitch-custom
@@ -152,7 +188,6 @@ exit 0
 %dir /etc/openvswitch
 /etc/bash_completion.d/ovs-appctl-bashcomp.bash
 /etc/bash_completion.d/ovs-vsctl-bashcomp.bash
-/etc/init.d/openvswitch
 %config(noreplace) /etc/logrotate.d/openvswitch
 /etc/sysconfig/network-scripts/ifup-ovs
 /etc/sysconfig/network-scripts/ifdown-ovs
@@ -186,6 +221,17 @@ exit 0
 /usr/share/openvswitch/scripts/ovs-vtep
 /usr/share/openvswitch/scripts/sysconfig.template
 /usr/share/openvswitch/scripts/ovs-monitor-ipsec
+%{_sysconfdir}/openvswitch/default.conf
+%config %ghost %{_sysconfdir}/openvswitch/conf.db
+%ghost %{_sysconfdir}/openvswitch/.conf.db.~lock~
+%config %ghost %{_sysconfdir}/openvswitch/system-id.conf
+%config(noreplace) %{_sysconfdir}/sysconfig/openvswitch
+%defattr(-,root,root)
+%{_unitdir}/openvswitch.service
+%{_unitdir}/ovsdb-server.service
+%{_unitdir}/ovs-vswitchd.service
+/usr/share/openvswitch/scripts/openvswitch.init
+/usr/share/openvswitch/scripts/ovs-systemd-reload
 /usr/share/openvswitch/vswitch.ovsschema
 /usr/share/openvswitch/vtep.ovsschema
 %doc NOTICE
@@ -204,11 +250,12 @@ exit 0
 /usr/share/man/man5/*
 /usr/share/man/man7/*
 /usr/share/man/man8/*
-%{_mandir}/man5/*
-%{_mandir}/man7/*
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Mon Apr 12 2021 liuyiguo <liuyiguo1@huawei.com> - 2.12.0-11
+- Change the OVS startup mode to service startup.
+
 * Wed Mar 31 2021 wangyue <wangyue92@huawei.com> - 2.12.0-10
 - fix CVE-2020-27827 CVE-2015-8011
 
