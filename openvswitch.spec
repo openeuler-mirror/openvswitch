@@ -1,12 +1,14 @@
 # This is enabled by default for versions of the distribution that
 # have Python 3 by default.
+%global with_python2 1
+%global with_python3 0
 
 Name:           openvswitch
 Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        15
+Release:        16
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -18,9 +20,18 @@ Patch0005:      CVE-2020-35498.patch
 Patch0006:      CVE-2020-27827.patch
 Patch0007:      CVE-2015-8011.patch
 
+%if %{with_python3}
 Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
 BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 BuildRequires:  python3-devel
+%endif
+
+%if %{with_python2}
+Requires:       logrotate hostname  selinux-policy-targeted
+BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python2-sphinx unbound-devel
+BuildRequires:  python2-devel
+%endif
+
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
 Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
 
@@ -43,6 +54,19 @@ Summary:        Helpful information for Open vSwitch
 %description help
 Documents and helpful information for Open vSwitch.
 
+%if %{with_python2}
+%package -n python2-openvswitch
+Summary: Open vSwitch python2 bindings
+License: ASL 2.0
+BuildArch: noarch
+Requires: python2
+Requires: python2-six
+
+%description -n python2-openvswitch
+Python bindings for the Open vSwitch database
+%endif
+
+%if %{with_python3}
 %package -n python3-openvswitch
 Summary: Open vSwitch python3 bindings
 License: ASL 2.0
@@ -53,15 +77,20 @@ Requires: python3-six
 
 %description -n python3-openvswitch
 Python bindings for the Open vSwitch database
+%endif
 
 %prep
 %autosetup -p1 
 
 %build
+%if %{with_python2}
+    export PYTHON2=python
+%endif
 autoreconf
 ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=%{_localstatedir} \
     --libdir=%{_libdir} --enable-ssl --enable-shared
 %make_build
+# /usr/bin/make -O -j64 V=1 VERBOSE=1
 make selinux-policy
 
 %install
@@ -76,7 +105,7 @@ install -D -m 0644 rhel/usr_share_openvswitch_scripts_sysconfig.template $RPM_BU
 install -p -m 644 -D selinux/openvswitch-custom.pp \
     $RPM_BUILD_ROOT%{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
 
-rm \
+rm -f \
     $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
@@ -114,11 +143,29 @@ install -m 0644 lib/*.h                    $RPM_BUILD_ROOT/%{_includedir}/openvs
 install -D -m 0644 lib/.libs/libopenvswitch.a \
     $RPM_BUILD_ROOT/%{_libdir}/libopenvswitch.a
 
+%if %{with_python2}
+install -d -m 0755 $RPM_BUILD_ROOT%{python2_sitelib}
+cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
+    $RPM_BUILD_ROOT%{python2_sitelib}
+%endif
+
+%if %{with_python3}
 install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
 cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
     $RPM_BUILD_ROOT%{python3_sitelib}
+%endif
 
 pushd python
+%if %{with_python2}
+(
+export CPPFLAGS="-I ../include"
+export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
+%py2_build
+%py2_install
+[ -f "$RPM_BUILD_ROOT/%{python2_sitearch}/ovs/_json.so" ]
+)
+%endif
+%if %{with_python3}
 (
 export CPPFLAGS="-I ../include"
 export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
@@ -126,6 +173,7 @@ export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
 %py3_install
 [ -f "$RPM_BUILD_ROOT/%{python3_sitearch}/ovs/_json$(python3-config --extension-suffix)" ]
 )
+%endif
 popd
 
 rm -rf $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/
@@ -201,9 +249,16 @@ exit 0
 %{_libdir}/lib*.so.*
 /usr/sbin/ovs-vswitchd
 /usr/sbin/ovsdb-server
+%if %{with_python3}
 %{python3_sitelib}/ovs
 %{python3_sitelib}/ovstest
 %{python3_sitearch}/ovs
+%endif
+%if %{with_python2}
+%{python2_sitelib}/ovs
+%{python2_sitelib}/ovstest
+%{python2_sitearch}/ovs
+%endif
 /usr/share/openvswitch/scripts/ovs-check-dead-ifs
 /usr/share/openvswitch/scripts/ovs-ctl
 /usr/share/openvswitch/scripts/ovs-kmod-ctl
@@ -214,15 +269,46 @@ exit 0
 /usr/share/openvswitch/scripts/ovs-monitor-ipsec
 /usr/share/openvswitch/vswitch.ovsschema
 /usr/share/openvswitch/vtep.ovsschema
+# add for python2
+/usr/bin/ovs-dpctl-top
+/usr/bin/ovs-l3ping
+/usr/bin/ovs-parse-backtrace
+/usr/bin/ovs-test
+/usr/bin/ovs-vlan-test
+/usr/sbin/ovs-bugtool
+/usr/share/openvswitch/bugtool-plugins/kernel-info/openvswitch.xml
+/usr/share/openvswitch/bugtool-plugins/network-status/openvswitch.xml
+/usr/share/openvswitch/bugtool-plugins/network-status/ovn.xml
+/usr/share/openvswitch/bugtool-plugins/system-configuration.xml
+/usr/share/openvswitch/bugtool-plugins/system-configuration/openvswitch.xml
+/usr/share/openvswitch/bugtool-plugins/system-logs/openvswitch.xml
+/usr/share/openvswitch/scripts/ovs-bugtool-daemons-ver
+/usr/share/openvswitch/scripts/ovs-bugtool-fdb-show
+/usr/share/openvswitch/scripts/ovs-bugtool-get-dpdk-nic-numa
+/usr/share/openvswitch/scripts/ovs-bugtool-ovs-appctl-dpif
+/usr/share/openvswitch/scripts/ovs-bugtool-ovs-bridge-datapath-type
+/usr/share/openvswitch/scripts/ovs-bugtool-ovs-ofctl-loop-over-bridges
+/usr/share/openvswitch/scripts/ovs-bugtool-ovs-vswitchd-threads-affinity
+/usr/share/openvswitch/scripts/ovs-bugtool-qos-configs
+/usr/share/openvswitch/scripts/ovs-bugtool-tc-class-show
 %doc NOTICE
 /var/lib/openvswitch
 /var/log/openvswitch
 %{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
 
+%if %{with_python2}
+%files -n python2-openvswitch
+%{python2_sitelib}/ovs
+%{python2_sitearch}/ovs-*.egg-info
+%doc LICENSE
+%endif
+
+%if %{with_python3}
 %files -n python3-openvswitch
 %{python3_sitelib}/ovs
 %{python3_sitearch}/ovs-*.egg-info
 %doc LICENSE
+%endif
 
 %files devel
 %{_libdir}/lib*.so
@@ -235,11 +321,12 @@ exit 0
 /usr/share/man/man5/*
 /usr/share/man/man7/*
 /usr/share/man/man8/*
-%{_mandir}/man5/*
-%{_mandir}/man7/*
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Tue Jun 01 2021 liksh <liks11@chinunicom.cn> - 2.12.0-16
+- create python2-openvswitch package for multi-version of openstack  
+
 * Tue Mar 30 2021 wangyue <wangyue92@huawei.com> - 2.12.0-15
 - fix CVE-2020-27827 and CVE-2015-8011
 
