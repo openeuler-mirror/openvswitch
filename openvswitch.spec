@@ -8,7 +8,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        16
+Release:        17
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -81,6 +81,7 @@ Python bindings for the Open vSwitch database
 
 %prep
 %autosetup -p1 
+sed -i "s/'sortedcontainers'//" python/setup.py 
 
 %build
 %if %{with_python2}
@@ -324,7 +325,10 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
-* Tue Jun 01 2021 liksh <liks11@chinunicom.cn> - 2.12.0-16
+* Thu Jun 03 2021 liksh <liks11@chinaunicom.cn> - 2.12.0-17
+- delete redundant require
+
+* Tue Jun 01 2021 liksh <liks11@chinaunicom.cn> - 2.12.0-16
 - create python2-openvswitch package for multi-version of openstack  
 
 * Tue Mar 30 2021 wangyue <wangyue92@huawei.com> - 2.12.0-15
