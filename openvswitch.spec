@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        16
+Release:        17
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -46,6 +46,7 @@ Documents and helpful information for Open vSwitch.
 
 %package -n python3-openvswitch
 Summary: Open vSwitch python3 bindings
+Provides: python3-ovs
 License: ASL 2.0
 BuildArch: noarch
 Requires: python3
@@ -241,6 +242,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Tue Aug 3 2021 huangtianhua <huangtianhua@huawei.com> - 2.12.0-17
+- Adds python3-ovs as provide
+
 * Thu Jul 29 2021 liuyumeng <liuyumeng5@huawei.com> - 2.12.0-16
 - Type:cve
 - ID:CVE-2021-36980 
