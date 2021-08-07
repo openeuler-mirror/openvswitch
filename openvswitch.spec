@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        11
+Release:        12
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -14,7 +14,7 @@ Patch0004:      CVE-2020-27827.patch
 Patch0005:      CVE-2015-8011.patch
 Patch0006:      backport-CVE-2021-36980.patch
 
-Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
+Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
 Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
@@ -253,6 +253,12 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Sat Aug 7 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-12
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC: fix the error that openvswitch installation dependency is missing 
+
 * Thu Jul 29 2021 liuyumeng <liuyumeng5@huawei.com> - 2.12.0-11
 - Type:cve
 - ID:CVE-2021-36980 
