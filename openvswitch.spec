@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        18
+Release:        19
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -19,7 +19,7 @@ Patch0006:      CVE-2020-27827.patch
 Patch0007:      CVE-2015-8011.patch
 Patch0008:      backport-CVE-2021-36980.patch
 
-Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
+Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted libsepol >= 3.1
 BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 BuildRequires:  python3-devel
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
@@ -288,6 +288,12 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Thu Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-19
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC: fix the error of opevswitch installation and upgrade
+
 * Wed Sep 1 2021 hanhui <hanhui15@huawei.com> - 2.12.0-18
 - Change the OVS startup mode to service startup.
 
