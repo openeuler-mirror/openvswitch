@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        13
+Release:        14
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -16,7 +16,7 @@ Patch0006:      backport-CVE-2021-36980.patch
 Patch0007:      0002-fix-DPDK-compiling-error.patch
 
 Requires:       %{name}-help
-Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted
+Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
 Requires:       openssl iproute module-init-tools
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
 # required by python3-openvswitch and build configuration --with-dpdk --libcapng
@@ -526,6 +526,12 @@ exit 0
 %{_unitdir}/ovn-controller-vtep.service
 
 %changelog
+* Tue Nov 2 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-14
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC: fix the error of opevswitch installation and upgrade
+
 * Fri Aug 27 2021 Ge Wang <wangge20@openeuler.org> - 2.12.0-13
 - Add host, ipsec and ovn subpackage
 
