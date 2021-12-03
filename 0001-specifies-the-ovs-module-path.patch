@@ -1,0 +1,24 @@
+From e17d0df4e0e904ffbd08c1c3518ca1ce984259bf Mon Sep 17 00:00:00 2001
+From: wu-leilei <wu18740459704@163.com>
+Date: Thu, 2 Dec 2021 17:23:12 +0800
+Subject: [PATCH] specifies the ovs module path
+
+---
+ ipsec/ovs-monitor-ipsec.in | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/ipsec/ovs-monitor-ipsec.in b/ipsec/ovs-monitor-ipsec.in
+index 4710be0..73722cf 100755
+--- a/ipsec/ovs-monitor-ipsec.in
++++ b/ipsec/ovs-monitor-ipsec.in
+@@ -21,6 +21,7 @@ import copy
+ import os
+ from string import Template
+ 
++sys.path.append("/usr/share/openvswitch/python/")
+ import ovs.daemon
+ import ovs.db.idl
+ import ovs.dirs
+-- 
+2.23.0
+

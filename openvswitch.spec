@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        14
+Release:        15
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -14,6 +14,7 @@ Patch0004:      CVE-2020-27827.patch
 Patch0005:      CVE-2015-8011.patch
 Patch0006:      backport-CVE-2021-36980.patch
 Patch0007:      0002-fix-DPDK-compiling-error.patch
+Patch0008:      0001-specifies-the-ovs-module-path.patch
 
 Requires:       %{name}-help
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
@@ -526,6 +527,9 @@ exit 0
 %{_unitdir}/ovn-controller-vtep.service
 
 %changelog
+* Thu Dec 02 2021 wulei <wulei80@huawei.com> - 2.12.0-15
+- Rectify the failure to start openvswitch-ipesc and ovn-controller-vtep services
+
 * Thu Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-14
 - Type:bugfix
 - ID:NA
