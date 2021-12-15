@@ -1,0 +1,38 @@
+From 7781a2a0cc9eecf1a19233515fc3f676005f3b12 Mon Sep 17 00:00:00 2001
+From: wu-leilei <wu18740459704@163.com>
+Date: Tue, 14 Dec 2021 15:08:50 +0800
+Subject: [PATCH] change the name of the ipsec configuration file
+
+---
+ ipsec/ovs-monitor-ipsec.in | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/ipsec/ovs-monitor-ipsec.in b/ipsec/ovs-monitor-ipsec.in
+index 4710be0..9d4b6e9 100755
+--- a/ipsec/ovs-monitor-ipsec.in
++++ b/ipsec/ovs-monitor-ipsec.in
+@@ -213,8 +213,8 @@ conn prevent_unencrypted_vxlan
+     def __init__(self, root_prefix):
+         self.CHARON_CONF = root_prefix + "/etc/strongswan.d/ovs.conf"
+         self.IPSEC = root_prefix + "/usr/sbin/ipsec"
+-        self.IPSEC_CONF = root_prefix + "/etc/ipsec.conf"
+-        self.IPSEC_SECRETS = root_prefix + "/etc/ipsec.secrets"
++        self.IPSEC_CONF = root_prefix + "/etc/openvswitch-ipsec.conf"
++        self.IPSEC_SECRETS = root_prefix + "/etc/openvswitch-ipsec.secrets"
+         self.conf_file = None
+         self.secrets_file = None
+ 
+@@ -433,8 +433,8 @@ conn prevent_unencrypted_vxlan
+ 
+     def __init__(self, libreswan_root_prefix):
+         self.IPSEC = libreswan_root_prefix + "/usr/sbin/ipsec"
+-        self.IPSEC_CONF = libreswan_root_prefix + "/etc/ipsec.conf"
+-        self.IPSEC_SECRETS = libreswan_root_prefix + "/etc/ipsec.secrets"
++        self.IPSEC_CONF = libreswan_root_prefix + "/etc/openvswitch-ipsec.conf"
++        self.IPSEC_SECRETS = libreswan_root_prefix + "/etc/openvswitch-ipsec.secrets"
+         self.conf_file = None
+         self.secrets_file = None
+ 
+-- 
+2.23.0
+
