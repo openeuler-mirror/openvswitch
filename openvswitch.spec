@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        19
+Release:        20
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -58,6 +58,35 @@ Requires: python3-six
 %description -n python3-openvswitch
 Python bindings for the Open vSwitch database
 
+%package ovn-central
+Summary: Open vSwitch - Open Virtual Network support
+Requires: openvswitch openvswitch-ovn-common
+Requires: firewalld-filesystem
+
+%description ovn-central
+OVN, the Open Virtual Network, is a system to support virtual network
+abstraction.  OVN complements the existing capabilities of OVS to add
+native support for virtual network abstractions, such as virtual L2 and
+L3 overlays and security groups.
+
+%package ovn-host
+Summary: Open vSwitch - Open Virtual Network support
+Requires: openvswitch openvswitch-ovn-common
+Requires: firewalld-filesystem
+
+%description ovn-host
+OVN, the Open Virtual Network, is a system to support virtual network
+abstraction.  OVN complements the existing capabilities of OVS to add
+native support for virtual network abstractions, such as virtual L2 and
+L3 overlays and security groups.
+
+%package ovn-common
+Summary: Open vSwitch - Open Virtual Network support
+Requires: openvswitch
+
+%description ovn-common
+Utilities that are use to diagnose and manage the OVN components.
+
 %prep
 %autosetup -p1 
 
@@ -92,7 +121,7 @@ install -d -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch
 install -p -D -m 0644 \
         rhel/usr_share_openvswitch_scripts_systemd_sysconfig.template \
         $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/openvswitch
-for service in openvswitch ovsdb-server ovs-vswitchd; do
+for service in openvswitch ovsdb-server ovs-vswitchd ovn-northd ovn-controller; do
         install -p -D -m 0644 \
                         rhel/usr_lib_systemd_system_${service}.service \
                         $RPM_BUILD_ROOT%{_unitdir}/${service}.service
@@ -114,11 +143,9 @@ rm \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
     $RPM_BUILD_ROOT/usr/share/man/man8/ovs-l3ping.8 \
     $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-vlan-bug-workaround.8 \
-    $RPM_BUILD_ROOT/usr/bin/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/man/man?/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn*
+    $RPM_BUILD_ROOT/usr/bin/ovn-docker-* \
+    $RPM_BUILD_ROOT/usr/bin/ovn-controller-vtep \
+    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-vlan-bug-workaround.8
 (cd "$RPM_BUILD_ROOT" && rm -rf usr/%{_lib}/*.la)
 (cd "$RPM_BUILD_ROOT" && rm -rf usr/include)
 
@@ -169,6 +196,14 @@ touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/.conf.db.~lock~
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
 
 install -d $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/
+install -p -m 0644 rhel/usr_lib_firewalld_services_ovn-central-firewall-service.xml \
+  $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/ovn-central-firewall-service.xml
+install -p -m 0644 rhel/usr_lib_firewalld_services_ovn-host-firewall-service.xml \
+  $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/ovn-host-firewall-service.xml
+
+install -d -m 0755 $RPM_BUILD_ROOT%{_prefix}/lib/ocf/resource.d/ovn
+ln -s %{_datadir}/openvswitch/scripts/ovndb-servers.ocf \
+  $RPM_BUILD_ROOT%{_prefix}/lib/ocf/resource.d/ovn/ovndb-servers
 
 install -p -D -m 0755 \
         rhel/usr_share_openvswitch_scripts_ovs-systemd-reload \
@@ -191,6 +226,27 @@ rm -rf $RPM_BUILD_ROOT
     fi
 %endif
 
+%preun ovn-central
+%if 0%{?systemd_preun:1}
+    %systemd_preun ovn-northd.service
+%else
+    if [ $1 -eq 0 ] ; then
+        # Package removal, not upgrade
+        /bin/systemctl --no-reload disable ovn-northd.service >/dev/null 2>&1 || :
+        /bin/systemctl stop ovn-northd.service >/dev/null 2>&1 || :
+    fi
+%endif
+
+%preun ovn-host
+%if 0%{?systemd_preun:1}
+    %systemd_preun ovn-controller.service
+%else
+    if [ $1 -eq 0 ] ; then
+        # Package removal, not upgrade
+        /bin/systemctl --no-reload disable ovn-controller.service >/dev/null 2>&1 || :
+        /bin/systemctl stop ovn-controller.service >/dev/null 2>&1 || :
+    fi
+%endif
 %post
 %if 0%{?systemd_post:1}
     # This may not enable openvswitch service or do daemon-reload.
@@ -204,6 +260,46 @@ rm -rf $RPM_BUILD_ROOT
 
 %selinux_modules_install -s targeted /usr/share/selinux/packages/%{name}/openvswitch-custom.pp
 
+%post ovn-central
+%if 0%{?systemd_post:1}
+    %systemd_post ovn-northd.service
+%else
+    # Package install, not upgrade
+    if [ $1 -eq 1 ]; then
+        /bin/systemctl daemon-reload >dev/null || :
+    fi
+%endif
+
+%post ovn-host
+%if 0%{?systemd_post:1}
+    %systemd_post ovn-controller.service
+%else
+    # Package install, not upgrade
+    if [ $1 -eq 1 ]; then
+        /bin/systemctl daemon-reload >dev/null || :
+    fi
+%endif
+%postun ovn-central
+%if 0%{?systemd_postun_with_restart:1}
+    %systemd_postun_with_restart ovn-northd.service
+%else
+    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
+    if [ "$1" -ge "1" ] ; then
+    # Package upgrade, not uninstall
+        /bin/systemctl try-restart ovn-northd.service >/dev/null 2>&1 || :
+    fi
+%endif
+
+%postun ovn-host
+%if 0%{?systemd_postun_with_restart:1}
+    %systemd_postun_with_restart ovn-controller.service
+%else
+    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
+    if [ "$1" -ge "1" ] ; then
+        # Package upgrade, not uninstall
+        /bin/systemctl try-restart ovn-controller.service >/dev/null 2>&1 || :
+    fi
+%endif
 %postun
 %if 0%{?systemd_postun:1}
     %systemd_postun %{name}.service
@@ -289,7 +385,41 @@ exit 0
 /usr/share/man/man8/*
 %doc README.rst NEWS rhel/README.RHEL.rst
 
+%files ovn-common
+%{_bindir}/ovn-detrace
+%{_bindir}/ovn-nbctl
+%{_bindir}/ovn-sbctl
+%{_bindir}/ovn-trace
+%{_datadir}/openvswitch/scripts/ovn-ctl
+%{_datadir}/openvswitch/scripts/ovndb-servers.ocf
+%{_mandir}/man1/ovn-detrace.1*
+%{_mandir}/man8/ovn-ctl.8*
+%{_mandir}/man8/ovn-nbctl.8*
+%{_mandir}/man8/ovn-trace.8*
+%{_mandir}/man7/ovn-architecture.7*
+%{_mandir}/man8/ovn-sbctl.8*
+%{_mandir}/man5/ovn-nb.5*
+%{_mandir}/man5/ovn-sb.5*
+%{_prefix}/lib/ocf/resource.d/ovn/ovndb-servers
+
+%files ovn-central
+%{_bindir}/ovn-northd
+%{_mandir}/man8/ovn-northd.8*
+%config %{_datadir}/openvswitch/ovn-nb.ovsschema
+%config %{_datadir}/openvswitch/ovn-sb.ovsschema
+%{_unitdir}/ovn-northd.service
+%{_prefix}/lib/firewalld/services/ovn-central-firewall-service.xml
+
+%files ovn-host
+%{_bindir}/ovn-controller
+%{_mandir}/man8/ovn-controller.8*
+%{_unitdir}/ovn-controller.service
+%{_prefix}/lib/firewalld/services/ovn-host-firewall-service.xml
+
 %changelog
+* Wed May 18 2022 jiangxinyu <jiangxinyu@kylinos.cn> - 2.12.0-20
+- Add ovn-central ovn-central and ovn-host subpackage
+
 * Thu Sep 2 2021 hanhui <hanhui15@huawei.com> - 2.12.0-19
 - Fix selinux preventing ovs-kmod-ctl err
 
