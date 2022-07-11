@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        20
+Release:        21
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -19,6 +19,7 @@ Patch0006:      CVE-2020-27827.patch
 Patch0007:      CVE-2015-8011.patch
 Patch0008:      backport-CVE-2021-36980.patch
 Patch0009:	backport-dpif-netlink-avoid-netlink-modify-flow-put-op-failed-after-tc-modify-flow-put-op-failed.patch
+Patch0010:	CVE-2021-3905.patch
 
 Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted libsepol >= 3.1
 BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
@@ -289,6 +290,12 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Fri Jul 8 2022 qz_cx <wangqingzheng@kylinos.cn> - 2.12.0-21
+- Type:cve
+- ID:CVE-2021-3905
+- SUG:NA
+- DESC: fix CVE-2021-3905
+
 * Wed Apr 06 2022 chenjian <chenjian@kylinos.cn> - 2.12.0-20
 - add backport-dpif-netlink-avoid-netlink-modify-flow-put-op-failed-after-tc-modify-flow-put-op-failed.patch
 
