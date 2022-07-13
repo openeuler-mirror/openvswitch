@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        16
+Release:        17
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -16,6 +16,7 @@ Patch0006:      backport-CVE-2021-36980.patch
 Patch0007:      0002-fix-DPDK-compiling-error.patch
 Patch0008:      specifies-the-ovs-module-path.patch
 Patch0009:      change-the-name-of-the-ipsec-configuration-file.patch
+Patch0010:	CVE-2021-3905.patch
 
 Requires:       %{name}-help
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
@@ -528,6 +529,12 @@ exit 0
 %{_unitdir}/ovn-controller-vtep.service
 
 %changelog
+* Wed Jul 13 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.0-17
+- Type:cve
+- ID:CVE-2021-3905
+- SUG:NA
+- DESC:fix CVE-2021-3905
+
 * Wed Dec 15 2021 wulei <wulei80@huawei.com> - 2.12.0-16
 - Fix the problem that openvswitch-ipsec.service causes ipsec.service to fail to start
 
