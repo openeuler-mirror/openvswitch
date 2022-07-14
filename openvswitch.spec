@@ -299,7 +299,7 @@ exit 0
 * Wed Apr 06 2022 chenjian <chenjian@kylinos.cn> - 2.12.0-20
 - add backport-dpif-netlink-avoid-netlink-modify-flow-put-op-failed-after-tc-modify-flow-put-op-failed.patch
 
-* Thu Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-19
+* Mon Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-19
 - Type:bugfix
 - ID:NA
 - SUG:NA
