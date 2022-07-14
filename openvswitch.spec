@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        20
+Release:        21
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -18,6 +18,7 @@ Patch0005:      CVE-2020-35498.patch
 Patch0006:      CVE-2020-27827.patch
 Patch0007:      CVE-2015-8011.patch
 Patch0008:      backport-CVE-2021-36980.patch
+Patch0009:	CVE-2021-3905.patch
 
 Patch9000:      fix-selinux-err.patch
 
@@ -417,6 +418,9 @@ exit 0
 %{_prefix}/lib/firewalld/services/ovn-host-firewall-service.xml
 
 %changelog
+* Wed Jul 13 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.0-21
+- fix CVE-2021-3905
+
 * Wed May 18 2022 jiangxinyu <jiangxinyu@kylinos.cn> - 2.12.0-20
 - Add ovn-central ovn-central and ovn-host subpackage
 
