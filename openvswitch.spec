@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        15
+Release:        16
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -13,26 +13,13 @@ Patch0003:      CVE-2020-35498.patch
 Patch0004:      CVE-2020-27827.patch
 Patch0005:      CVE-2015-8011.patch
 Patch0006:      backport-CVE-2021-36980.patch
-Patch0007:      0002-fix-DPDK-compiling-error.patch
-Patch0008:	CVE-2021-3905.patch
+Patch0007:	CVE-2021-3905.patch
 
 Requires:       %{name}-help
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
-Requires:       openssl iproute module-init-tools
 BuildRequires:  python2-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
-# required by python3-openvswitch and build configuration --with-dpdk --libcapng
-BuildRequires:  python3-sphinx python3-devel python3-six libcap-ng-devel dpdk-devel libpcap-devel numactl-devel
-
-Requires(pre): shadow-utils
-Requires(post): /bin/sed
-Requires(post): /usr/sbin/usermod
-Requires(post): /usr/sbin/groupadd
-Requires(post): systemd-units
-Requires(preun): systemd-units
-Requires(postun): systemd-units
 Provides:       openvswitch-selinux-policy = %{version}-%{release}
 Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
-Obsoletes:      openvswitch-controller <= 0:2.1.0-1
 
 %bcond_without check
 %bcond_with check_datapath_kernel
@@ -53,95 +40,23 @@ Summary:        Helpful information for Open vSwitch
 %description help
 Documents and helpful information for Open vSwitch.
 
-%package -n python3-openvswitch
-Summary: Open vSwitch python3 bindings
-Requires: python3 python3-six
-Obsoletes: python-openvswitch < 2.10.0-6
-Provides: python-openvswitch = %{version}-%{release}
-
-%description -n python3-openvswitch
-Python bindings for the Open vSwitch database
-
-%package test
-Summary: Open vSwitch testing utilities
-BuildArch: noarch
-Requires: python3-openvswitch = %{version}-%{release}
-
-%description test
-Utilities that are useful to diagnose performance and connectivity issues in Open vSwitch setup.
-
-%package -n network-scripts-%{name}
-Summary: Open vSwitch legacy network service support
-Requires: network-scripts
-Supplements: (%{name} and network-scripts)
-
-%description -n network-scripts-%{name}
-This provides the ifup and ifdown scripts for use with the legacy network service.
-
-%package ipsec
-Summary: Open vSwitch IPsec tunneling support
-Requires: openvswitch libreswan
-Requires: python3-openvswitch = %{version}-%{release}
-
-%description ipsec
-This package provides IPsec tunneling support for OVS tunnels.
-
-%package ovn-central
-Summary: Open vSwitch - Open Virtual Network support
-Requires: openvswitch openvswitch-ovn-common
-Requires: firewalld-filesystem
-
-%description ovn-central
-OVN, the Open Virtual Network, is a system to support virtual network
-abstraction.  OVN complements the existing capabilities of OVS to add
-native support for virtual network abstractions, such as virtual L2 and
-L3 overlays and security groups.
-
-%package ovn-host
-Summary: Open vSwitch - Open Virtual Network support
-Requires: openvswitch openvswitch-ovn-common
-Requires: firewalld-filesystem
-
-%description ovn-host
-OVN, the Open Virtual Network, is a system to support virtual network
-abstraction.  OVN complements the existing capabilities of OVS to add
-native support for virtual network abstractions, such as virtual L2 and
-L3 overlays and security groups.
-
-%package ovn-vtep
-Summary: Open vSwitch - Open Virtual Network support
-Requires: openvswitch openvswitch-ovn-common
-
-%description ovn-vtep
-OVN vtep controller
-
-%package ovn-common
-Summary: Open vSwitch - Open Virtual Network support
-Requires: openvswitch
-
-%description ovn-common
-Utilities that are use to diagnose and manage the OVN components.
-
 %prep
 %autosetup -p1
 
 %build
-./boot.sh
 autoreconf
 ./configure \
         --prefix=/usr \
         --sysconfdir=/etc \
         --localstatedir=%{_localstatedir} \
         --libdir=%{_libdir} \
-        --enable-libcapng \
-        --disable-static \
         --enable-ssl \
         --enable-shared \
-        --with-dpdk \
-        --with-pkidir=%{_sharedstatedir}/openvswitch/pki 
+        --with-pkidir=%{_sharedstatedir}/openvswitch/pki \
+        PYTHON=%{__python2}
 
-/usr/bin/python3 build-aux/dpdkstrip.py \
-        --dpdk \
+build-aux/dpdkstrip.py \
+        --nodpdk \
         < rhel/usr_lib_systemd_system_ovs-vswitchd.service.in \
         > rhel/usr_lib_systemd_system_ovs-vswitchd.service
 
@@ -152,14 +67,12 @@ make selinux-policy
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
 
-install -d -m 0755 $RPM_BUILD_ROOT%{_rundir}/openvswitch
-install -d -m 0750 $RPM_BUILD_ROOT%{_localstatedir}/log/openvswitch
 install -d -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch
 
 install -p -D -m 0644 \
         rhel/usr_share_openvswitch_scripts_systemd_sysconfig.template \
         $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/openvswitch
-for service in openvswitch ovsdb-server ovs-vswitchd openvswitch-ipsec ovn-controller ovn-controller-vtep ovn-northd; do
+for service in openvswitch ovsdb-server ovs-vswitchd; do
         install -p -D -m 0644 \
                         rhel/usr_lib_systemd_system_${service}.service \
                         $RPM_BUILD_ROOT%{_unitdir}/${service}.service
@@ -171,19 +84,25 @@ install -D -m 0644 rhel/etc_openvswitch_default.conf                     $RPM_BU
 install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifup-ovs           $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifup-ovs
 install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifdown-ovs         $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifdown-ovs
 install -D -m 0644 rhel/usr_share_openvswitch_scripts_sysconfig.template $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/sysconfig.template
-install -m 0644 vswitchd/vswitch.ovsschema \
-  $RPM_BUILD_ROOT/%{_datadir}/openvswitch/vswitch.ovsschema
 
 install -p -m 644 -D selinux/openvswitch-custom.pp \
     $RPM_BUILD_ROOT%{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
 
-pushd python
-export CPPFLAGS="-I ../include"
-export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
-%py3_build
-%py3_install
-[ -f "$RPM_BUILD_ROOT/%{python3_sitearch}/ovs/_json.cpython-%{python3_version_nodots}m-%{_arch}-%{_target_os}%{?_gnu}.so" ]
-popd
+rm \
+    $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
+    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
+    $RPM_BUILD_ROOT/usr/bin/ovs-test \
+    $RPM_BUILD_ROOT/usr/bin/ovs-l3ping \
+    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
+    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-l3ping.8 \
+    $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
+    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-vlan-bug-workaround.8 \
+    $RPM_BUILD_ROOT/usr/bin/ovn-* \
+    $RPM_BUILD_ROOT/usr/share/man/man?/ovn-* \
+    $RPM_BUILD_ROOT/usr/share/openvswitch/ovn-* \
+    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn*
+(cd "$RPM_BUILD_ROOT" && rm -rf usr/%{_lib}/*.la)
+(cd "$RPM_BUILD_ROOT" && rm -rf usr/include)
 
 install -d -m 0755 $RPM_BUILD_ROOT%{_rundir}/openvswitch
 install -d -m 0755 $RPM_BUILD_ROOT%{_localstatedir}/log/openvswitch
@@ -206,6 +125,9 @@ install -m 0644 include/sparse/netinet/*.h $RPM_BUILD_ROOT/%{_includedir}/openvs
 install -m 0644 include/sparse/sys/*.h     $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/sys
 install -m 0644 lib/*.h                    $RPM_BUILD_ROOT/%{_includedir}/openvswitch/lib
 
+install -D -m 0644 lib/.libs/libopenvswitch.a \
+    $RPM_BUILD_ROOT/%{_libdir}/libopenvswitch.a
+
 install -d -m 0755 $RPM_BUILD_ROOT/%{_sharedstatedir}/openvswitch
 
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/conf.db
@@ -213,46 +135,16 @@ touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/.conf.db.~lock~
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
 
 install -d $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/
-install -p -m 0644 rhel/usr_lib_firewalld_services_ovn-central-firewall-service.xml \
-  $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/ovn-central-firewall-service.xml
-install -p -m 0644 rhel/usr_lib_firewalld_services_ovn-host-firewall-service.xml \
-  $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/ovn-host-firewall-service.xml
-
-install -d -m 0755 $RPM_BUILD_ROOT%{_prefix}/lib/ocf/resource.d/ovn
-ln -s %{_datadir}/openvswitch/scripts/ovndb-servers.ocf \
-  $RPM_BUILD_ROOT%{_prefix}/lib/ocf/resource.d/ovn/ovndb-servers
 
 install -p -D -m 0755 \
         rhel/usr_share_openvswitch_scripts_ovs-systemd-reload \
         $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovs-systemd-reload
-
-rm -rf $RPM_BUILD_ROOT/usr/include/openflow/
-rm -rf $RPM_BUILD_ROOT/usr/include/ovn/
-rm \
-    $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
-    $RPM_BUILD_ROOT/usr/bin/ovs-test \
-    $RPM_BUILD_ROOT/usr/bin/ovs-l3ping \
-    $RPM_BUILD_ROOT/usr/bin/ovn-docker-overlay-driver \
-    $RPM_BUILD_ROOT/usr/bin/ovn-docker-underlay-driver \
-    $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn-bugtool-nbctl-show \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn-bugtool-sbctl-lflow-list \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn-bugtool-sbctl-show
-(cd "$RPM_BUILD_ROOT" && rm -rf usr/%{_lib}/*.la)
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %pre
 %selinux_relabel_pre -s targeted
-getent group openvswitch >/dev/null || groupadd -r openvswitch
-getent passwd openvswitch >/dev/null || \
-    useradd -r -g openvswitch -d / -s /sbin/nologin \
-    -c "Open vSwitch Daemons" openvswitch
-getent group hugetlbfs >/dev/null || groupadd hugetlbfs
-usermod -a -G hugetlbfs openvswitch
-exit 0
 
 %preun
 %if 0%{?systemd_preun:1}
@@ -265,48 +157,7 @@ exit 0
     fi
 %endif
 
-%preun ovn-central
-%if 0%{?systemd_preun:1}
-    %systemd_preun ovn-northd.service
-%else
-    if [ $1 -eq 0 ] ; then
-        # Package removal, not upgrade
-        /bin/systemctl --no-reload disable ovn-northd.service >/dev/null 2>&1 || :
-        /bin/systemctl stop ovn-northd.service >/dev/null 2>&1 || :
-    fi
-%endif
-
-%preun ovn-host
-%if 0%{?systemd_preun:1}
-    %systemd_preun ovn-controller.service
-%else
-    if [ $1 -eq 0 ] ; then
-        # Package removal, not upgrade
-        /bin/systemctl --no-reload disable ovn-controller.service >/dev/null 2>&1 || :
-        /bin/systemctl stop ovn-controller.service >/dev/null 2>&1 || :
-    fi
-%endif
-
-%preun ovn-vtep
-%if 0%{?systemd_preun:1}
-    %systemd_preun ovn-controller-vtep.service
-%else
-    if [ $1 -eq 0 ] ; then
-        # Package removal, not upgrade
-        /bin/systemctl --no-reload disable ovn-controller-vtep.service >/dev/null 2>&1 || :
-        /bin/systemctl stop ovn-controller-vtep.service >/dev/null 2>&1 || :
-    fi
-%endif
-
 %post
-if [ $1 -eq 1 ]; then
-    sed -i 's:^#OVS_USER_ID=:OVS_USER_ID=:' /etc/sysconfig/openvswitch
-    sed -i \
-        's@OVS_USER_ID="openvswitch:openvswitch"@OVS_USER_ID="openvswitch:hugetlbfs"@'\
-        /etc/sysconfig/openvswitch
-fi
-chown -R openvswitch:openvswitch /etc/openvswitch
-
 %if 0%{?systemd_post:1}
     # This may not enable openvswitch service or do daemon-reload.
     %systemd_post %{name}.service
@@ -318,69 +169,6 @@ chown -R openvswitch:openvswitch /etc/openvswitch
 %endif
 
 %selinux_modules_install -s targeted /usr/share/selinux/packages/%{name}/openvswitch-custom.pp
-
-%post ovn-central
-%if 0%{?systemd_post:1}
-    %systemd_post ovn-northd.service
-%else
-    # Package install, not upgrade
-    if [ $1 -eq 1 ]; then
-        /bin/systemctl daemon-reload >dev/null || :
-    fi
-%endif
-
-%post ovn-host
-%if 0%{?systemd_post:1}
-    %systemd_post ovn-controller.service
-%else
-    # Package install, not upgrade
-    if [ $1 -eq 1 ]; then
-        /bin/systemctl daemon-reload >dev/null || :
-    fi
-%endif
-
-%post ovn-vtep
-%if 0%{?systemd_post:1}
-    %systemd_post ovn-controller-vtep.service
-%else
-    # Package install, not upgrade
-    if [ $1 -eq 1 ]; then
-        /bin/systemctl daemon-reload >dev/null || :
-    fi
-%endif
-
-%postun ovn-central
-%if 0%{?systemd_postun_with_restart:1}
-    %systemd_postun_with_restart ovn-northd.service
-%else
-    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
-    if [ "$1" -ge "1" ] ; then
-    # Package upgrade, not uninstall
-        /bin/systemctl try-restart ovn-northd.service >/dev/null 2>&1 || :
-    fi
-%endif
-
-%postun ovn-host
-%if 0%{?systemd_postun_with_restart:1}
-    %systemd_postun_with_restart ovn-controller.service
-%else
-    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
-    if [ "$1" -ge "1" ] ; then
-        # Package upgrade, not uninstall
-        /bin/systemctl try-restart ovn-controller.service >/dev/null 2>&1 || :
-    fi
-%endif
-
-%postun ovn-vtep
-%if 0%{?systemd_postun_with_restart:1}
-    %systemd_postun_with_restart ovn-controller-vtep.service
-%else
-    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
-    if [ "$1" -ge "1" ] ; then
-        # Package upgrade, not uninstall
-        /bin/systemctl try-restart ovn-controller-vtep.service >/dev/null 2>&1 || :
-    fi
-%endif
 
 %postun
 %if 0%{?systemd_postun:1}
@@ -438,7 +226,6 @@ exit 0
 %{_sysconfdir}/openvswitch/default.conf
 %config %ghost %{_sysconfdir}/openvswitch/conf.db
 %ghost %{_sysconfdir}/openvswitch/.conf.db.~lock~
-%ghost %attr(0600,-,-) %verify(not owner group md5 size mtime) %{_sysconfdir}/openvswitch/.conf.db.~lock~
 %config %ghost %{_sysconfdir}/openvswitch/system-id.conf
 %config(noreplace) %{_sysconfdir}/sysconfig/openvswitch
 %defattr(-,root,root)
@@ -456,6 +243,7 @@ exit 0
 
 %files devel
 %{_libdir}/lib*.so
+%{_libdir}/lib*.a
 %{_libdir}/pkgconfig
 %{_includedir}/openvswitch/*
 
@@ -466,67 +254,13 @@ exit 0
 /usr/share/man/man8/*
 %doc README.rst NEWS rhel/README.RHEL.rst
 
-%files -n python3-openvswitch
-%{python3_sitearch}/ovs
-%{python3_sitearch}/ovs-*.egg-info
-%doc LICENSE
-
-%files test
-%{_bindir}/ovs-pcap
-%{_bindir}/ovs-tcpdump
-%{_bindir}/ovs-tcpundump
-%{_mandir}/man1/ovs-pcap.1*
-%{_mandir}/man8/ovs-tcpdump.8*
-%{_mandir}/man1/ovs-tcpundump.1*
-%exclude %{_mandir}/man8/ovs-test.8*
-%exclude %{_mandir}/man8/ovs-vlan-test.8*
-%exclude %{_mandir}/man8/ovs-l3ping.8*
-
-%files -n network-scripts-%{name}
-%{_sysconfdir}/sysconfig/network-scripts/ifup-ovs
-%{_sysconfdir}/sysconfig/network-scripts/ifdown-ovs
-
-%files ipsec
-%{_datadir}/openvswitch/scripts/ovs-monitor-ipsec
-%{_unitdir}/openvswitch-ipsec.service
-
-%files ovn-common
-%{_bindir}/ovn-detrace
-%{_bindir}/ovn-nbctl
-%{_bindir}/ovn-sbctl
-%{_bindir}/ovn-trace
-%{_datadir}/openvswitch/scripts/ovn-ctl
-%{_datadir}/openvswitch/scripts/ovndb-servers.ocf
-%{_mandir}/man1/ovn-detrace.1*
-%{_mandir}/man8/ovn-ctl.8*
-%{_mandir}/man8/ovn-nbctl.8*
-%{_mandir}/man8/ovn-trace.8*
-%{_mandir}/man7/ovn-architecture.7*
-%{_mandir}/man8/ovn-sbctl.8*
-%{_mandir}/man5/ovn-nb.5*
-%{_mandir}/man5/ovn-sb.5*
-%{_prefix}/lib/ocf/resource.d/ovn/ovndb-servers
-
-%files ovn-central
-%{_bindir}/ovn-northd
-%{_mandir}/man8/ovn-northd.8*
-%config %{_datadir}/openvswitch/ovn-nb.ovsschema
-%config %{_datadir}/openvswitch/ovn-sb.ovsschema
-%{_unitdir}/ovn-northd.service
-%{_prefix}/lib/firewalld/services/ovn-central-firewall-service.xml
-
-%files ovn-host
-%{_bindir}/ovn-controller
-%{_mandir}/man8/ovn-controller.8*
-%{_unitdir}/ovn-controller.service
-%{_prefix}/lib/firewalld/services/ovn-host-firewall-service.xml
-
-%files ovn-vtep
-%{_bindir}/ovn-controller-vtep
-%{_mandir}/man8/ovn-controller-vtep.8*
-%{_unitdir}/ovn-controller-vtep.service
-
 %changelog
+* Mon Jul 25 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.0-16
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC:revent "Add host, ipsec and ovn subpackage"
+
 * Wed Jul 13 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.0-15
 - Type:cve
 - ID:CVE-2021-3905
