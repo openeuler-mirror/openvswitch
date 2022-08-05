@@ -1,0 +1,41 @@
+From 3b35964c7da2a4000486c57e2c347c8cc67ac393 Mon Sep 17 00:00:00 2001
+Date: Wed, 1 Sep 2021 16:54:34 +0800
+Subject: [PATCH] openvswitch-2
+
+---
+ selinux/openvswitch-custom.te.in | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/selinux/openvswitch-custom.te.in b/selinux/openvswitch-custom.te.in
+index b2c63ab..8f76c14 100644
+--- a/selinux/openvswitch-custom.te.in
++++ b/selinux/openvswitch-custom.te.in
+@@ -15,10 +15,12 @@ require {
+         type ifconfig_exec_t;
+         type init_t;
+         type init_var_run_t;
++        type initrc_t;
+         type insmod_exec_t;
+         type kernel_t;
+         type hostname_exec_t;
+         type modules_conf_t;
++        type modules_dep_t;
+         type modules_object_t;
+         type passwd_file_t;
+         type plymouth_exec_t;
+@@ -117,10 +119,12 @@ allow openvswitch_t openvswitch_load_module_t:process transition;
+ allow openvswitch_load_module_t bin_t:file { execute execute_no_trans map };
+ allow openvswitch_load_module_t init_t:unix_stream_socket { getattr ioctl read write };
+ allow openvswitch_load_module_t init_var_run_t:dir { getattr read open search };
++allow openvswitch_load_module_t initrc_t:fifo_file ioctl;
+ allow openvswitch_load_module_t insmod_exec_t:file { execute execute_no_trans getattr map open read };
+ allow openvswitch_load_module_t kernel_t:system module_request;
+ allow openvswitch_load_module_t modules_conf_t:dir { getattr open read search };
+ allow openvswitch_load_module_t modules_conf_t:file { getattr open read };
++allow openvswitch_load_module_t modules_dep_t:file open;
+ allow openvswitch_load_module_t modules_object_t:file { map getattr open read };
+ allow openvswitch_load_module_t modules_object_t:dir { getattr open read search };
+ allow openvswitch_load_module_t openvswitch_load_module_exec_t:file { entrypoint };
+-- 
+2.27.0
+
