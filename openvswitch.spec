@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.0
 License:        ASL 2.0 and ISC
-Release:        22
+Release:        23
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -19,6 +19,7 @@ Patch0006:      CVE-2020-27827.patch
 Patch0007:      CVE-2015-8011.patch
 Patch0008:      backport-CVE-2021-36980.patch
 Patch0009:      CVE-2021-3905.patch
+Patch0010:      backport-dpif-netlink-avoid-netlink-modify-flow-put-op-failed-after-tc-modify-flow-put-op-failed.patch
 
 Patch9000:      fix-selinux-err.patch
 
@@ -291,6 +292,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Fri Aug 05 2022 wangkerong<wangkerong@huawei.com> -2.12.0-23
+- add backport-dpif-netlink-avoid-netlink-modify-flow-put-op-failed-after-tc-modify-flow-put-op-failed.patch
+
 * Mon Jul 25 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.0-22
 - revent "Add ovn-central ovn-central and ovn-host subpackage"
 
