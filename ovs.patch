@@ -1771,7 +1771,7 @@ index 445a51d..3c08d56 100644
  
  #endif /* dpdk.h */
 diff --git a/openvswitch-2.14.2/lib/dpif-netdev.c b/openvswitch-2.14.2/lib/dpif-netdev.c
-index 02df8f1..05168b3 100644
+index 02df8f1..bd1c190 100644
 --- a/openvswitch-2.14.2/lib/dpif-netdev.c
 +++ b/openvswitch-2.14.2/lib/dpif-netdev.c
 @@ -33,6 +33,11 @@
@@ -1982,7 +1982,7 @@ index 02df8f1..05168b3 100644
 +    
 +    dev = netdev_ports_get(in_port, dpif_type_str);
 +    if (!dev) {
-+        VLOG_ERR("device=%u is deleted when dp_netdev_flow_offload_del, mega_ufid="UUID_FMT, in_port,
++        VLOG_DBG("device=%u is deleted when dp_netdev_flow_offload_del, mega_ufid="UUID_FMT, in_port,
 +                 UUID_ARGS((struct uuid *) &flow->mega_ufid));
 +        hiovs_offload_flow_api_del(NULL, &flow->mega_ufid, NULL);
 +        return 0;
@@ -2383,7 +2383,15 @@ index 02df8f1..05168b3 100644
  
      ovs_mutex_lock(&pmd->flow_mutex);
      netdev_flow = dp_netdev_pmd_find_flow(pmd, del->ufid, del->key,
-@@ -4619,6 +4952,20 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
+@@ -3903,7 +4236,6 @@ flow_del_on_pmd(struct dp_netdev_pmd_thread *pmd,
+         error = ENOENT;
+     }
+     ovs_mutex_unlock(&pmd->flow_mutex);
+-
+     return error;
+ }
+ 
+@@ -4619,6 +4951,20 @@ dp_netdev_pmd_flush_output_on_port(struct dp_netdev_pmd_thread *pmd,
      output_cnt = dp_packet_batch_size(&p->output_pkts);
      ovs_assert(output_cnt > 0);
  
@@ -2404,7 +2412,7 @@ index 02df8f1..05168b3 100644
      netdev_send(p->port->netdev, tx_qid, &p->output_pkts, dynamic_txqs);
      dp_packet_batch_init(&p->output_pkts);
  
-@@ -4678,6 +5025,11 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
+@@ -4678,6 +5024,11 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
      int rem_qlen = 0, *qlen_p = NULL;
      uint64_t cycles;
  
@@ -2416,7 +2424,7 @@ index 02df8f1..05168b3 100644
      /* Measure duration for polling and processing rx burst. */
      cycle_timer_start(&pmd->perf_stats, &timer);
  
-@@ -4689,6 +5041,17 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
+@@ -4689,6 +5040,17 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
          qlen_p = &rem_qlen;
      }
  
@@ -2434,7 +2442,7 @@ index 02df8f1..05168b3 100644
      error = netdev_rxq_recv(rxq->rx, &batch, qlen_p);
      if (!error) {
          /* At least one packet received. */
-@@ -4707,6 +5070,18 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
+@@ -4707,6 +5069,18 @@ dp_netdev_process_rxq_port(struct dp_netdev_pmd_thread *pmd,
                  }
              }
          }
@@ -2453,7 +2461,7 @@ index 02df8f1..05168b3 100644
          /* Process packet batch. */
          dp_netdev_input(pmd, &batch, port_no);
  
-@@ -5102,7 +5477,6 @@ reload_affected_pmds(struct dp_netdev *dp)
+@@ -5102,7 +5476,6 @@ reload_affected_pmds(struct dp_netdev *dp)
  
      CMAP_FOR_EACH (pmd, node, &dp->poll_threads) {
          if (pmd->need_reload) {
@@ -2461,7 +2469,7 @@ index 02df8f1..05168b3 100644
              dp_netdev_reload_pmd__(pmd);
          }
      }
-@@ -6508,7 +6882,19 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
+@@ -6508,7 +6881,19 @@ dp_netdev_destroy_pmd(struct dp_netdev_pmd_thread *pmd)
  {
      struct dpcls *cls;
  
@@ -2481,7 +2489,7 @@ index 02df8f1..05168b3 100644
      hmap_destroy(&pmd->send_port_cache);
      hmap_destroy(&pmd->tnl_port_cache);
      hmap_destroy(&pmd->tx_ports);
-@@ -6842,6 +7228,7 @@ dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
+@@ -6842,6 +7227,7 @@ dpif_netdev_packet_get_rss_hash(struct dp_packet *packet,
      return hash;
  }
  
@@ -2489,7 +2497,7 @@ index 02df8f1..05168b3 100644
  struct packet_batch_per_flow {
      unsigned int byte_count;
      uint16_t tcp_flags;
-@@ -6849,6 +7236,7 @@ struct packet_batch_per_flow {
+@@ -6849,6 +7235,7 @@ struct packet_batch_per_flow {
  
      struct dp_packet_batch array;
  };
@@ -2497,7 +2505,7 @@ index 02df8f1..05168b3 100644
  
  static inline void
  packet_batch_per_flow_update(struct packet_batch_per_flow *batch,
-@@ -6885,6 +7273,10 @@ packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
+@@ -6885,6 +7272,10 @@ packet_batch_per_flow_execute(struct packet_batch_per_flow *batch,
  
      actions = dp_netdev_flow_get_actions(flow);
  
@@ -2508,7 +2516,7 @@ index 02df8f1..05168b3 100644
      dp_netdev_execute_actions(pmd, &batch->array, true, &flow->flow,
                                actions->actions, actions->size);
  }
-@@ -7203,6 +7595,9 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
+@@ -7203,6 +7594,9 @@ handle_packet_upcall(struct dp_netdev_pmd_thread *pmd,
          uint32_t hash = dp_netdev_flow_hash(&netdev_flow->ufid);
          smc_insert(pmd, key, hash);
          emc_probabilistic_insert(pmd, key, netdev_flow);
@@ -2518,7 +2526,7 @@ index 02df8f1..05168b3 100644
      }
      if (pmd_perf_metrics_enabled(pmd)) {
          /* Update upcall stats. */
-@@ -7273,6 +7668,9 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
+@@ -7273,6 +7667,9 @@ fast_path_processing(struct dp_netdev_pmd_thread *pmd,
              if (netdev_flow) {
                  lookup_cnt += add_lookup_cnt;
                  rules[i] = &netdev_flow->cr;
@@ -2528,7 +2536,7 @@ index 02df8f1..05168b3 100644
                  continue;
              }
  
-@@ -7382,12 +7780,12 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
+@@ -7382,12 +7779,12 @@ dp_netdev_input__(struct dp_netdev_pmd_thread *pmd,
  
      /* All the flow batches need to be reset before any call to
       * packet_batch_per_flow_execute() as it could potentially trigger
@@ -2543,7 +2551,7 @@ index 02df8f1..05168b3 100644
       * appended to batches[k] of the 1st call to dp_netdev_input__(). */
      for (i = 0; i < n_batches; i++) {
          batches[i].flow->batch = NULL;
-@@ -7435,6 +7833,16 @@ dpif_netdev_register_upcall_cb(struct dpif *dpif, upcall_callback *cb,
+@@ -7435,6 +7832,16 @@ dpif_netdev_register_upcall_cb(struct dpif *dpif, upcall_callback *cb,
      dp->upcall_aux = aux;
      dp->upcall_cb = cb;
  }
@@ -2560,7 +2568,7 @@ index 02df8f1..05168b3 100644
  
  static void
  dpif_netdev_xps_revalidate_pmd(const struct dp_netdev_pmd_thread *pmd,
-@@ -7517,6 +7925,21 @@ pmd_send_port_cache_lookup(const struct dp_netdev_pmd_thread *pmd,
+@@ -7517,6 +7924,21 @@ pmd_send_port_cache_lookup(const struct dp_netdev_pmd_thread *pmd,
      return tx_port_lookup(&pmd->send_port_cache, port_no);
  }
  
@@ -2582,7 +2590,7 @@ index 02df8f1..05168b3 100644
  static int
  push_tnl_action(const struct dp_netdev_pmd_thread *pmd,
                  const struct nlattr *attr,
-@@ -8459,6 +8882,9 @@ const struct dpif_class dpif_netdev_class = {
+@@ -8459,6 +8881,9 @@ const struct dpif_class dpif_netdev_class = {
      dpif_netdev_bond_add,
      dpif_netdev_bond_del,
      dpif_netdev_bond_stats_get,
@@ -3113,7 +3121,7 @@ index ad2f1fe..e74296d 100644
  /* Lookup. */
  struct mac_entry *mac_learning_lookup(const struct mac_learning *ml,
 diff --git a/openvswitch-2.14.2/lib/netdev-dpdk.c b/openvswitch-2.14.2/lib/netdev-dpdk.c
-index f9284d0..2039953 100644
+index f9284d0..e71f0f8 100644
 --- a/openvswitch-2.14.2/lib/netdev-dpdk.c
 +++ b/openvswitch-2.14.2/lib/netdev-dpdk.c
 @@ -26,6 +26,10 @@
@@ -3541,7 +3549,17 @@ index f9284d0..2039953 100644
          }
  
          err = rte_vhost_driver_callback_register(dev->vhost_id,
-@@ -5162,6 +5203,14 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
+@@ -5145,9 +5186,7 @@ netdev_dpdk_get_port_id(struct netdev *netdev)
+     }
+ 
+     dev = netdev_dpdk_cast(netdev);
+-    ovs_mutex_lock(&dev->mutex);
+     ret = dev->port_id;
+-    ovs_mutex_unlock(&dev->mutex);
+ out:
+     return ret;
+ }
+@@ -5162,6 +5201,14 @@ netdev_dpdk_flow_api_supported(struct netdev *netdev)
          goto out;
      }
  
@@ -3556,7 +3574,27 @@ index f9284d0..2039953 100644
      dev = netdev_dpdk_cast(netdev);
      ovs_mutex_lock(&dev->mutex);
      if (dev->type == DPDK_DEV_ETH) {
-@@ -5209,7 +5258,7 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
+@@ -5181,9 +5228,7 @@ netdev_dpdk_rte_flow_destroy(struct netdev *netdev,
+     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+     int ret;
+ 
+-    ovs_mutex_lock(&dev->mutex);
+     ret = rte_flow_destroy(dev->port_id, rte_flow, error);
+-    ovs_mutex_unlock(&dev->mutex);
+     return ret;
+ }
+ 
+@@ -5197,9 +5242,7 @@ netdev_dpdk_rte_flow_create(struct netdev *netdev,
+     struct rte_flow *flow;
+     struct netdev_dpdk *dev = netdev_dpdk_cast(netdev);
+ 
+-    ovs_mutex_lock(&dev->mutex);
+     flow = rte_flow_create(dev->port_id, attr, items, actions, error);
+-    ovs_mutex_unlock(&dev->mutex);
+     return flow;
+ }
+ 
+@@ -5209,7 +5252,7 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
                                   struct rte_flow_query_count *query,
                                   struct rte_flow_error *error)
  {
@@ -3565,6 +3603,16 @@ index f9284d0..2039953 100644
      const struct rte_flow_action actions[] = {
          {
              .type = RTE_FLOW_ACTION_TYPE_COUNT,
+@@ -5227,9 +5270,7 @@ netdev_dpdk_rte_flow_query_count(struct netdev *netdev,
+     }
+ 
+     dev = netdev_dpdk_cast(netdev);
+-    ovs_mutex_lock(&dev->mutex);
+     ret = rte_flow_query(dev->port_id, rte_flow, actions, query, error);
+-    ovs_mutex_unlock(&dev->mutex);
+     return ret;
+ }
+ 
 diff --git a/openvswitch-2.14.2/lib/netdev-native-tnl.c b/openvswitch-2.14.2/lib/netdev-native-tnl.c
 index b89dfdd..0b3a745 100644
 --- a/openvswitch-2.14.2/lib/netdev-native-tnl.c
@@ -3597,7 +3645,7 @@ index b89dfdd..0b3a745 100644
  
      if (udp->udp_csum) {
 diff --git a/openvswitch-2.14.2/lib/netdev-offload-dpdk.c b/openvswitch-2.14.2/lib/netdev-offload-dpdk.c
-index 17b08ca..cbd576b 100644
+index 17b08ca..dc95c68 100644
 --- a/openvswitch-2.14.2/lib/netdev-offload-dpdk.c
 +++ b/openvswitch-2.14.2/lib/netdev-offload-dpdk.c
 @@ -28,6 +28,11 @@
@@ -3941,7 +3989,7 @@ index 17b08ca..cbd576b 100644
 +#ifdef HAVE_HWOFF_AGENT
 +#define HIOVS_RTE_FLOW_BATCH_SIZE        16
 +static struct cmap hiovs_ufid_rte_flow_map = CMAP_INITIALIZER;
-+static struct ovs_mutex hiovs_map_lock;
++static struct ovs_mutex hiovs_map_lock = OVS_MUTEX_INITIALIZER;
 +
 +static void hiovs_rte_flow_map_lock(void)
 +{
