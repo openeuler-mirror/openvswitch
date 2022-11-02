@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.4
 License:        ASL 2.0 and ISC
-Release:        1
+Release:        2
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -33,6 +33,15 @@ Summary:        Helpful information for Open vSwitch
 
 %description help
 Documents and helpful information for Open vSwitch.
+
+%package -n python3-openvswitch
+Summary: Open vSwitch python3 bindings
+Requires: python3 python3-six
+obsoletes: python-openvswitch < 2.10.0-6
+Provides: python-openvswitch = %{version}-%{release}
+
+%description -n python3-openvswitch
+Python bindings for the Open vSwitch database
 
 %prep
 %autosetup -p1
@@ -124,6 +133,20 @@ install -D -m 0644 lib/.libs/libopenvswitch.a \
 
 install -d -m 0755 $RPM_BUILD_ROOT/%{_sharedstatedir}/openvswitch
 
+install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
+cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
+    $RPM_BUILD_ROOT%{python3_sitelib}
+
+pushd python
+(
+export CPPFLAGS="-I ../include"
+export LDFLAGS="%{__global_ldflags} -L $RPM_BUILD_ROOT%{_libdir}"
+%py3_build
+%py3_install
+[ -f "$RPM_BUILD_ROOT/%{python3_sitearch}/ovs/_json$(python3-config --extension-suffix)" ]
+)
+popd
+
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/conf.db
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/.conf.db.~lock~
 touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
@@ -206,6 +229,9 @@ exit 0
 /usr/sbin/ovs-bugtool
 /usr/sbin/ovs-vswitchd
 /usr/sbin/ovsdb-server
+%{python3_sitelib}/ovs
+%{python3_sitelib}/ovstest
+%{python3_sitearch}/ovs
 /usr/share/openvswitch/bugtool-plugins/
 /usr/share/openvswitch/python/
 /usr/share/openvswitch/scripts/ovs-bugtool-*
@@ -248,7 +274,15 @@ exit 0
 /usr/share/man/man8/*
 %doc README.rst NEWS rhel/README.RHEL.rst
 
+%files -n python3-openvswitch
+%{python3_sitearch}/ovs
+%{python3_sitearch}/ovs-*.egg-info
+%doc LICENSE
+
 %changelog
+* Tue Nov 01 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-2
+- recover python3-openvswitch
+
 * Wed Sep 28 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-1
 - upgrade to 2.12.4
 
