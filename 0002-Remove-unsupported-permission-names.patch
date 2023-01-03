@@ -1,15 +1,15 @@
 diff --git a/selinux/openvswitch-custom.te.in b/selinux/openvswitch-custom.te.in
-index 2adaf23..b2c63ab 100644
+index beb0ab0d6..9f51f604e 100644
 --- a/selinux/openvswitch-custom.te.in
 +++ b/selinux/openvswitch-custom.te.in
-@@ -78,8 +78,8 @@ domtrans_pattern(openvswitch_t, openvswitch_load_module_exec_t, openvswitch_load
- 
- #============= openvswitch_t ==============
- allow openvswitch_t self:capability { dac_override audit_write net_broadcast net_raw };
--allow openvswitch_t self:netlink_audit_socket { create nlmsg_relay audit_write read write };
--allow openvswitch_t self:netlink_netfilter_socket { create nlmsg_relay audit_write read write };
-+allow openvswitch_t self:netlink_audit_socket { create nlmsg_relay  read write };
-+allow openvswitch_t self:netlink_netfilter_socket { create read write };
+@@ -49,8 +49,8 @@ require {
+         class fifo_file { getattr read write append ioctl lock open };
+         class filesystem getattr;
+         class lnk_file { read open };
+-        class netlink_audit_socket { create nlmsg_relay audit_write read write };
+-        class netlink_netfilter_socket { create nlmsg_relay audit_write read write };
++        class netlink_audit_socket { create nlmsg_relay read write };
++        class netlink_netfilter_socket { create read write };
  @begin_dpdk@
- allow openvswitch_t self:netlink_rdma_socket { setopt bind create };
+         class netlink_rdma_socket { setopt bind create };
  @end_dpdk@

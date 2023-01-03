@@ -1,5 +1,5 @@
 diff --git a/Makefile.am b/Makefile.am
-index ff1f94b..cca6cf0 100644
+index cb8076433..9807d6345 100644
 --- a/Makefile.am
 +++ b/Makefile.am
 @@ -30,7 +30,7 @@ AM_CPPFLAGS += -I $(top_builddir)/lib

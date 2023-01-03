@@ -1,152 +1,233 @@
-# This is enabled by default for versions of the distribution that
-# have Python 3 by default.
+%bcond_with dpdk
 
-Name:           openvswitch
-Summary:        Production Quality, Multilayer Open Virtual Switch
-URL:            http://www.openvswitch.org/
-Version:        2.12.4
-License:        ASL 2.0 and ISC
-Release:        2
-Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
-Buildroot:      /tmp/openvswitch-rpm
+%ifarch x86_64
+%bcond_without check
+%else
+%bcond_with check
+%endif
+
+%bcond_with check_datapath_kernel
+%bcond_without libcapng
+
+Name: openvswitch
+Summary: Open vSwitch daemon/database/utilities
+URL: https://www.openvswitch.org/
+Version: 2.17.5
+Release: 1
+License: ASL 2.0 and LGPLv2+ and SISSL
+
+Source0: https://www.openvswitch.org/releases/%{name}-%{version}.tar.gz
+Source1: openvswitch.sysusers
+
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Patch0002:      0002-Remove-unsupported-permission-names.patch
-Patch0003:      0003-Fallback-to-read-proc-net-dev-on-linux.patch
-Patch0004:	backport-CVE-2022-4338.patch
+Patch0003:      fix-selinux-err.patch
 
-Patch9000:      fix-selinux-err.patch
+BuildRequires: gcc gcc-c++ make
+BuildRequires: autoconf automake libtool
+BuildRequires: openssl openssl-devel
+BuildRequires: python3-devel python3-six python3-setuptools
+BuildRequires: python3-sphinx
+BuildRequires: desktop-file-utils
+BuildRequires: groff-base graphviz
+BuildRequires: unbound-devel
+# make check dependencies
+BuildRequires: procps-ng
 
-Requires:       logrotate hostname python >= 3.8 python3-six selinux-policy-targeted
-BuildRequires:  python3-six, openssl-devel checkpolicy selinux-policy-devel autoconf automake libtool python-sphinx unbound-devel
-BuildRequires:  python3-devel
-Provides:       openvswitch-selinux-policy = %{version}-%{release}
-Obsoletes:      openvswitch-selinux-policy < %{version}-%{release}
+%if %{with check_datapath_kernel}
+BuildRequires: nmap-ncat
+%endif
+ 
+%if %{with libcapng}
+BuildRequires: libcap-ng libcap-ng-devel
+%endif
+ 
+%if %{with dpdk}
+BuildRequires: dpdk-devel libpcap-devel numactl-devel
+%endif
 
-%bcond_without check
-%bcond_with check_datapath_kernel
+Requires: openssl iproute module-init-tools
+
+%{?systemd_requires}
+%{?sysusers_requires_compat}
+
+Requires(post): /bin/sed
+Requires(post): %{_sbindir}/update-alternatives
+Requires(postun): %{_sbindir}/update-alternatives
+Obsoletes: openvswitch-controller <= 0:2.1.0-1
 
 %description
-Open vSwitch is a production quality, multilayer virtual switch licensed under
-the open source Apache 2.0 license.
-
-%package devel
-Summary:        Development tools for Open vSwitch
-
-%description devel
-Libraries, header files, and other development tools for Open vSwitch.
-
-%package help
-Summary:        Helpful information for Open vSwitch
-
-%description help
-Documents and helpful information for Open vSwitch.
+Open vSwitch provides standard network bridging functions and
+support for the OpenFlow protocol for remote per-flow control of
+traffic.
 
 %package -n python3-openvswitch
 Summary: Open vSwitch python3 bindings
-Provides: python3-ovs
 License: ASL 2.0
-BuildArch: noarch
-Requires: python3
-Requires: python3-six
-%{?python_provide:%python_provide python3-openvswitch = %{version}-%{release}}
+Requires: python3 python3-six
+Obsoletes: python-openvswitch < 2.10.0-6
+Provides: python-openvswitch = %{version}-%{release}
 
 %description -n python3-openvswitch
 Python bindings for the Open vSwitch database
 
+%package test
+Summary: Open vSwitch testing utilities
+License: ASL 2.0
+BuildArch: noarch
+Requires: python3-openvswitch = %{version}-%{release}
+
+%description test
+Utilities that are useful to diagnose performance and connectivity
+issues in Open vSwitch setup.
+
+%package testcontroller
+Summary: Simple controller for testing OpenFlow setups
+License: ASL 2.0
+Requires: openvswitch = %{version}-%{release}
+
+%description testcontroller
+This controller enables OpenFlow switches that connect to it to act as
+MAC-learning Ethernet switches.
+It can be used for initial testing of OpenFlow networks.
+It is not a necessary or desirable part of a production OpenFlow deployment.
+
+%package devel
+Summary: Open vSwitch OpenFlow development package (library, headers)
+License: ASL 2.0
+
+%description devel
+This provides shared library, libopenswitch.so and the openvswitch header
+files needed to build an external application.
+
+%package -n network-scripts-%{name}
+Summary: Open vSwitch legacy network service support
+License: ASL 2.0
+Requires: network-scripts
+Supplements: (%{name} and network-scripts)
+ 
+%description -n network-scripts-%{name}
+This provides the ifup and ifdown scripts for use with the legacy network
+service.
+%package ipsec
+Summary: Open vSwitch IPsec tunneling support
+License: ASL 2.0
+Requires: openvswitch libreswan
+Requires: python3-openvswitch = %{version}-%{release}
+
+%description ipsec
+This package provides IPsec tunneling support for OVS tunnels.
+
+%if %{with dpdk}
+%package dpdk
+Summary: Open vSwitch OpenFlow development package (switch, linked with DPDK)
+License: ASL 2.0
+Supplements: %{name}
+
+%description dpdk
+This provides ovs-vswitchd linked with DPDK library.
+%endif
+
 %prep
-%autosetup -p1 
+%autosetup -p 1
+export PKG_CONFIG_PATH=/usr/lib64/pkgconfig
 
 %build
+rm -f python/ovs/dirs.py
 autoreconf
-./configure \
-        --prefix=/usr \
-        --sysconfdir=/etc \
-        --localstatedir=%{_localstatedir} \
-        --libdir=%{_libdir} \
-        --enable-ssl \
+
+./boot.sh
+mkdir build build-dpdk
+pushd build
+ln -s ../configure
+%configure \
+        --disable-libcapng \
+        --disable-static \
         --enable-shared \
+        --enable-ssl \
+        --with-pkidir=%{_sharedstatedir}/openvswitch/pki
+make %{?_smp_mflags}
+popd
+%if %{with dpdk}
+pushd build-dpdk
+ln -s ../configure
+%configure \
+        --disable-libcapng \
+        --disable-static \
+        --enable-shared \
+        --enable-ssl \
+        --with-dpdk=shared \
         --with-pkidir=%{_sharedstatedir}/openvswitch/pki \
-        PYTHON=%{__python3}
-
-sed -i '1s/python/python3/g' build-aux/dpdkstrip.py
-
-build-aux/dpdkstrip.py \
-        --nodpdk \
+        --libdir=%{_libdir}/openvswitch-dpdk \
+        --program-suffix=.dpdk
+make %{?_smp_mflags}
+popd
+%endif
+/usr/bin/python3 build-aux/dpdkstrip.py \
+        --dpdk \
         < rhel/usr_lib_systemd_system_ovs-vswitchd.service.in \
         > rhel/usr_lib_systemd_system_ovs-vswitchd.service
 
-%make_build
-make selinux-policy
 
 %install
 rm -rf $RPM_BUILD_ROOT
-make install DESTDIR=$RPM_BUILD_ROOT
 
+%if %{with dpdk}
+make -C build-dpdk install-exec DESTDIR=$RPM_BUILD_ROOT
+
+# We only need ovs-vswitchd-dpdk and some libraries for dpdk subpackage
+rm -rf $RPM_BUILD_ROOT%{_bindir}
+find $RPM_BUILD_ROOT%{_sbindir} -mindepth 1 -maxdepth 1 -not -name ovs-vswitchd.dpdk -delete
+find $RPM_BUILD_ROOT%{_libdir}/openvswitch-dpdk -mindepth 1 -maxdepth 1 -not -name "libofproto*.so.*" -not -name "libopenvswitch*.so.*" -delete
+%endif
+
+make -C build install DESTDIR=$RPM_BUILD_ROOT
+mv $RPM_BUILD_ROOT%{_sbindir}/ovs-vswitchd $RPM_BUILD_ROOT%{_sbindir}/ovs-vswitchd.nodpdk
+touch $RPM_BUILD_ROOT%{_sbindir}/ovs-vswitchd
+
+install -d -m 0755 $RPM_BUILD_ROOT/run/openvswitch
+install -d -m 0750 $RPM_BUILD_ROOT%{_localstatedir}/log/openvswitch
 install -d -m 0755 $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch
+
+install -p -D -m 0644 %{SOURCE1} $RPM_BUILD_ROOT%{_sysusersdir}/openvswitch.conf
+
+install -p -D -m 0644 rhel/usr_lib_udev_rules.d_91-vfio.rules \
+        $RPM_BUILD_ROOT%{_udevrulesdir}/91-vfio.rules
 
 install -p -D -m 0644 \
         rhel/usr_share_openvswitch_scripts_systemd_sysconfig.template \
         $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/openvswitch
-for service in openvswitch ovsdb-server ovs-vswitchd; do
+
+for service in openvswitch ovsdb-server ovs-vswitchd ovs-delete-transient-ports \
+               openvswitch-ipsec; do
         install -p -D -m 0644 \
                         rhel/usr_lib_systemd_system_${service}.service \
                         $RPM_BUILD_ROOT%{_unitdir}/${service}.service
 done
 
-install -m 0755 rhel/etc_init.d_openvswitch                              $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/openvswitch.init
-install -D -m 0644 rhel/etc_logrotate.d_openvswitch                      $RPM_BUILD_ROOT/etc/logrotate.d/openvswitch
-install -D -m 0644 rhel/etc_openvswitch_default.conf                     $RPM_BUILD_ROOT/%{_sysconfdir}/openvswitch/default.conf
-install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifup-ovs           $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifup-ovs
-install -D -m 0755 rhel/etc_sysconfig_network-scripts_ifdown-ovs         $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifdown-ovs
-install -D -m 0644 rhel/usr_share_openvswitch_scripts_sysconfig.template $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/sysconfig.template
+install -m 0755 rhel/etc_init.d_openvswitch \
+        $RPM_BUILD_ROOT%{_datadir}/openvswitch/scripts/openvswitch.init
 
-install -p -m 644 -D selinux/openvswitch-custom.pp \
-    $RPM_BUILD_ROOT%{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
+install -p -D -m 0644 rhel/etc_openvswitch_default.conf \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/openvswitch/default.conf
 
-rm \
-    $RPM_BUILD_ROOT/usr/bin/ovs-testcontroller \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-testcontroller.8 \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-test.8 \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-l3ping.8 \
-    $RPM_BUILD_ROOT/usr/sbin/ovs-vlan-bug-workaround \
-    $RPM_BUILD_ROOT/usr/share/man/man8/ovs-vlan-bug-workaround.8 \
-    $RPM_BUILD_ROOT/usr/bin/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/man/man?/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/ovn-* \
-    $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovn*
-(cd "$RPM_BUILD_ROOT" && rm -rf usr/%{_lib}/*.la)
-(cd "$RPM_BUILD_ROOT" && rm -rf usr/include)
+install -p -D -m 0644 rhel/etc_logrotate.d_openvswitch \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.d/openvswitch
 
-install -d -m 0755 $RPM_BUILD_ROOT%{_rundir}/openvswitch
-install -d -m 0755 $RPM_BUILD_ROOT%{_localstatedir}/log/openvswitch
-install -d -m 0755 $RPM_BUILD_ROOT/var/lib/openvswitch
+install -m 0644 vswitchd/vswitch.ovsschema \
+        $RPM_BUILD_ROOT/%{_datadir}/openvswitch/vswitch.ovsschema
 
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/openflow
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/openvswitch
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/arpa
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/netinet
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/sys
-install -d -m 0755 $RPM_BUILD_ROOT/%{_includedir}/openvswitch/lib
-install -m 0644 include/*.h                $RPM_BUILD_ROOT/%{_includedir}/openvswitch
-install -m 0644 include/openflow/*.h       $RPM_BUILD_ROOT/%{_includedir}/openvswitch/openflow
-install -m 0644 include/openvswitch/*.h    $RPM_BUILD_ROOT/%{_includedir}/openvswitch/openvswitch
-install -m 0644 include/sparse/*.h         $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse
-install -m 0644 include/sparse/arpa/*.h    $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/arpa
-install -m 0644 include/sparse/netinet/*.h $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/netinet
-install -m 0644 include/sparse/sys/*.h     $RPM_BUILD_ROOT/%{_includedir}/openvswitch/sparse/sys
-install -m 0644 lib/*.h                    $RPM_BUILD_ROOT/%{_includedir}/openvswitch/lib
-
-install -D -m 0644 lib/.libs/libopenvswitch.a \
-    $RPM_BUILD_ROOT/%{_libdir}/libopenvswitch.a
-
-install -d -m 0755 $RPM_BUILD_ROOT/%{_sharedstatedir}/openvswitch
-
+install -d -m 0755 $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/network-scripts/
+install -p -m 0755 rhel/etc_sysconfig_network-scripts_ifdown-ovs \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/network-scripts/ifdown-ovs
+install -p -m 0755 rhel/etc_sysconfig_network-scripts_ifup-ovs \
+        $RPM_BUILD_ROOT/%{_sysconfdir}/sysconfig/network-scripts/ifup-ovs
+ 
 install -d -m 0755 $RPM_BUILD_ROOT%{python3_sitelib}
-cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/* \
-    $RPM_BUILD_ROOT%{python3_sitelib}
+cp -a $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/ovstest \
+        $RPM_BUILD_ROOT%{python3_sitelib}
 
+# Build the JSON C extension for the Python lib (#1417738)
 pushd python
 (
 export CPPFLAGS="-I ../include"
@@ -159,36 +240,87 @@ popd
 
 rm -rf $RPM_BUILD_ROOT/%{_datadir}/openvswitch/python/
 
-touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/conf.db
-touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/.conf.db.~lock~
-touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
+install -d -m 0755 $RPM_BUILD_ROOT/%{_sharedstatedir}/openvswitch
 
-install -d $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/
+install -d -m 0755 $RPM_BUILD_ROOT%{_prefix}/lib/firewalld/services/
 
 install -p -D -m 0755 \
         rhel/usr_share_openvswitch_scripts_ovs-systemd-reload \
-        $RPM_BUILD_ROOT/usr/share/openvswitch/scripts/ovs-systemd-reload
+        $RPM_BUILD_ROOT%{_datadir}/openvswitch/scripts/ovs-systemd-reload
 
-%clean
-rm -rf $RPM_BUILD_ROOT
+touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/conf.db
+touch $RPM_BUILD_ROOT%{_sysconfdir}/openvswitch/system-id.conf
 
-%pre
-%selinux_relabel_pre -s targeted
+# remove unpackaged files
+rm -f $RPM_BUILD_ROOT/%{_bindir}/ovs-benchmark \
+        $RPM_BUILD_ROOT/%{_bindir}/ovs-docker \
+        $RPM_BUILD_ROOT/%{_bindir}/ovs-parse-backtrace \
+        $RPM_BUILD_ROOT/%{_sbindir}/ovs-vlan-bug-workaround
 
+rm -rf $RPM_BUILD_ROOT/%{_mandir}/*
+
+# remove ovn unpackages files
+rm -f $RPM_BUILD_ROOT%{_bindir}/ovn*
+rm -f $RPM_BUILD_ROOT%{_datadir}/openvswitch/ovn*
+rm -f $RPM_BUILD_ROOT%{_datadir}/openvswitch/scripts/ovn*
+rm -f $RPM_BUILD_ROOT%{_includedir}/ovn/*
+
+%check
+for dir in build \
+%if %{with dpdk}
+%ifarch %{dpdkarches}
+build-dpdk \
+%endif
+%endif
+; do
+pushd $dir
+%if %{with check}
+    touch resolv.conf
+    export OVS_RESOLV_CONF=$(pwd)/resolv.conf
+    if make check TESTSUITEFLAGS='%{_smp_mflags}' ||
+       make check TESTSUITEFLAGS='--recheck' ||
+       make check TESTSUITEFLAGS='--recheck'; then :;
+    else
+        cat tests/testsuite.log
+        exit 1
+    fi
+%endif
+%if %{with check_datapath_kernel}
+    if make check-kernel RECHECK=yes; then :;
+    else
+        cat tests/system-kmod-testsuite.log
+        exit 1
+    fi
+%endif
+popd
+done
+ 
 %preun
 %if 0%{?systemd_preun:1}
     %systemd_preun %{name}.service
 %else
     if [ $1 -eq 0 ] ; then
-        # Package removal, not upgrade
+    # Package removal, not upgrade
         /bin/systemctl --no-reload disable %{name}.service >/dev/null 2>&1 || :
         /bin/systemctl stop %{name}.service >/dev/null 2>&1 || :
     fi
 %endif
 
+%pre
+
 %post
+%{_sbindir}/update-alternatives --install %{_sbindir}/ovs-vswitchd \
+  ovs-vswitchd %{_sbindir}/ovs-vswitchd.nodpdk 10
+if [ $1 -eq 1 ]; then
+    sed -i 's:^#OVS_USER_ID=:OVS_USER_ID=:' /etc/sysconfig/openvswitch
+
+    sed -i \
+        's@OVS_USER_ID="openvswitch:openvswitch"@OVS_USER_ID="openvswitch:hugetlbfs"@'\
+        /etc/sysconfig/openvswitch
+fi
+chown -R openvswitch:openvswitch /etc/openvswitch
+
 %if 0%{?systemd_post:1}
-    # This may not enable openvswitch service or do daemon-reload.
     %systemd_post %{name}.service
 %else
     # Package install, not upgrade
@@ -197,94 +329,128 @@ rm -rf $RPM_BUILD_ROOT
     fi
 %endif
 
-%selinux_modules_install -s targeted /usr/share/selinux/packages/%{name}/openvswitch-custom.pp
-
 %postun
+if [ $1 -eq 0 ] ; then
+  %{_sbindir}/update-alternatives --remove ovs-vswitchd %{_sbindir}/ovs-vswitchd.nodpdk
+fi
 %if 0%{?systemd_postun:1}
     %systemd_postun %{name}.service
 %else
     /bin/systemctl daemon-reload >/dev/null 2>&1 || :
 %endif
 
-if [ $1 -eq 0 ] ; then
-  %selinux_modules_uninstall -s targeted openvswitch-custom
+%if %{with dpdk}
+%post dpdk
+if fgrep -qw sse4_1 /proc/cpuinfo; then
+    priority=20
+else
+    echo "Warning: the CPU doesn't support SSE 4.1, dpdk support is not enabled." >&2
+    priority=5
 fi
-exit 0
+%{_sbindir}/update-alternatives --install %{_sbindir}/ovs-vswitchd \
+  ovs-vswitchd %{_sbindir}/ovs-vswitchd.dpdk $priority
 
-%posttrans
-%selinux_relabel_post -s targeted
+%postun dpdk
+if [ $1 -eq 0 ] ; then
+  %{_sbindir}/update-alternatives --remove ovs-vswitchd %{_sbindir}/ovs-vswitchd.dpdk
+fi
+%endif
+
+%files -n python3-openvswitch
+%{python3_sitearch}/ovs
+%{python3_sitearch}/ovs-*.egg-info
+%{_datadir}/openvswitch/bugtool-plugins/
+%{_datadir}/openvswitch/scripts/ovs-bugtool-*
+%{_datadir}/openvswitch/scripts/ovs-check-dead-ifs
+%{_datadir}/openvswitch/scripts/ovs-vtep
+%{_bindir}/ovs-dpctl-top
+%{_sbindir}/ovs-bugtool
+%doc LICENSE
+
+%files test
+%{_bindir}/ovs-pcap
+%{_bindir}/ovs-tcpdump
+%{_bindir}/ovs-tcpundump
+%{_bindir}/ovs-test
+%{_bindir}/ovs-vlan-test
+%{_bindir}/ovs-l3ping
+%{python3_sitelib}/ovstest
+
+%files testcontroller
+%{_bindir}/ovs-testcontroller
+
+%files devel
+%{_libdir}/*.so
+%{_libdir}/pkgconfig/*.pc
+%{_includedir}/openvswitch/*
+%{_includedir}/openflow/*
+%exclude %{_libdir}/*.a
+%exclude %{_libdir}/*.la
+
+%files -n network-scripts-%{name}
+%{_sysconfdir}/sysconfig/network-scripts/ifup-ovs
+%{_sysconfdir}/sysconfig/network-scripts/ifdown-ovs
+%files ipsec
+%{_datadir}/openvswitch/scripts/ovs-monitor-ipsec
+%{_unitdir}/openvswitch-ipsec.service
+
+%if %{with dpdk}
+%files dpdk
+%{_libdir}/openvswitch-dpdk/
+%ghost %{_sbindir}/ovs-vswitchd
+%{_sbindir}/ovs-vswitchd.dpdk
+%endif
 
 %files
-%defattr(-,root,root)
-%dir /etc/openvswitch
-/etc/bash_completion.d/ovs-appctl-bashcomp.bash
-/etc/bash_completion.d/ovs-vsctl-bashcomp.bash
-%config(noreplace) /etc/logrotate.d/openvswitch
-/etc/sysconfig/network-scripts/ifup-ovs
-/etc/sysconfig/network-scripts/ifdown-ovs
-/usr/bin/ovs-appctl
-/usr/bin/ovs-dpctl
-/usr/bin/ovs-docker
-/usr/bin/ovs-ofctl
-/usr/bin/ovs-pcap
-/usr/bin/ovs-pki
-/usr/bin/ovs-tcpdump
-/usr/bin/ovs-tcpundump
-/usr/bin/ovs-vsctl
-/usr/bin/ovsdb-client
-/usr/bin/ovsdb-tool
-/usr/bin/vtep-ctl
-%{_libdir}/lib*.so.*
-/usr/sbin/ovs-vswitchd
-/usr/sbin/ovsdb-server
-%{python3_sitelib}/ovs
-%{python3_sitelib}/ovstest
-%{python3_sitearch}/ovs
-/usr/share/openvswitch/scripts/ovs-check-dead-ifs
-/usr/share/openvswitch/scripts/ovs-ctl
-/usr/share/openvswitch/scripts/ovs-kmod-ctl
-/usr/share/openvswitch/scripts/ovs-lib
-/usr/share/openvswitch/scripts/ovs-save
-/usr/share/openvswitch/scripts/ovs-vtep
-/usr/share/openvswitch/scripts/sysconfig.template
-/usr/share/openvswitch/scripts/ovs-monitor-ipsec
+%defattr(-,openvswitch,openvswitch)
+%dir %{_sysconfdir}/openvswitch
 %{_sysconfdir}/openvswitch/default.conf
-%config %ghost %{_sysconfdir}/openvswitch/conf.db
-%ghost %{_sysconfdir}/openvswitch/.conf.db.~lock~
+%config %ghost %verify(not owner group md5 size mtime) %{_sysconfdir}/openvswitch/conf.db
+%ghost %attr(0600,-,-) %verify(not owner group md5 size mtime) %{_sysconfdir}/openvswitch/.conf.db.~lock~
 %config %ghost %{_sysconfdir}/openvswitch/system-id.conf
-%config(noreplace) %{_sysconfdir}/sysconfig/openvswitch
 %defattr(-,root,root)
+%config(noreplace) %verify(not md5 size mtime) %{_sysconfdir}/sysconfig/openvswitch
+%{_sysconfdir}/bash_completion.d/ovs-appctl-bashcomp.bash
+%{_sysconfdir}/bash_completion.d/ovs-vsctl-bashcomp.bash
+%config(noreplace) %{_sysconfdir}/logrotate.d/openvswitch
 %{_unitdir}/openvswitch.service
 %{_unitdir}/ovsdb-server.service
 %{_unitdir}/ovs-vswitchd.service
-/usr/share/openvswitch/scripts/openvswitch.init
-/usr/share/openvswitch/scripts/ovs-systemd-reload
-/usr/share/openvswitch/vswitch.ovsschema
-/usr/share/openvswitch/vtep.ovsschema
-%doc NOTICE
+%{_unitdir}/ovs-delete-transient-ports.service
+%{_datadir}/openvswitch/scripts/openvswitch.init
+%{_datadir}/openvswitch/scripts/ovs-lib
+%{_datadir}/openvswitch/scripts/ovs-save
+%{_datadir}/openvswitch/scripts/ovs-ctl
+%{_datadir}/openvswitch/scripts/ovs-kmod-ctl
+%{_datadir}/openvswitch/scripts/ovs-systemd-reload
+%config %{_datadir}/openvswitch/local-config.ovsschema
+%config %{_datadir}/openvswitch/vswitch.ovsschema
+%config %{_datadir}/openvswitch/vtep.ovsschema
+%{_bindir}/ovs-appctl
+%{_bindir}/ovs-dpctl
+%{_bindir}/ovs-ofctl
+%{_bindir}/ovs-vsctl
+%{_bindir}/ovsdb-client
+%{_bindir}/ovsdb-tool
+%{_bindir}/ovs-pki
+%{_bindir}/vtep-ctl
+%{_libdir}/*.so.*
+%ghost %{_sbindir}/ovs-vswitchd
+%{_sbindir}/ovs-vswitchd.nodpdk
+%{_sbindir}/ovsdb-server
+%{_udevrulesdir}/91-vfio.rules
+%doc LICENSE NOTICE README.rst NEWS rhel/README.RHEL.rst
 /var/lib/openvswitch
-/var/log/openvswitch
-%{_datadir}/selinux/packages/%{name}/openvswitch-custom.pp
-
-%files -n python3-openvswitch
-%{python3_sitelib}/ovs
-%{python3_sitearch}/ovs-*.egg-info
-%doc LICENSE
-
-%files devel
-%{_libdir}/lib*.so
-%{_libdir}/lib*.a
-%{_libdir}/pkgconfig
-%{_includedir}/openvswitch/*
-
-%files help
-/usr/share/man/man1/*
-/usr/share/man/man5/*
-/usr/share/man/man7/*
-/usr/share/man/man8/*
-%doc README.rst NEWS rhel/README.RHEL.rst
+%attr(750,openvswitch,openvswitch) %verify(not owner group) /var/log/openvswitch
+%ghost %attr(755,root,root) %verify(not owner group) /run/openvswitch
+%{_sysconfdir}/sysconfig/network-scripts/ifup-ovs
+%{_sysconfdir}/sysconfig/network-scripts/ifdown-ovs
+%{_sysusersdir}/openvswitch.conf
 
 %changelog
+* Tue Jan 03 2023 wanglimin <wanglimin@xfusion.com> - 2.17.5-1
+- upgrade to 2.17.5-1
+
 * Thu Dec 29 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-2
 - fix CVE-2022-4338
 
