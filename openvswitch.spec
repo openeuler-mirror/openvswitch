@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.4
 License:        ASL 2.0 and ISC
-Release:        2
+Release:        3
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -55,6 +55,10 @@ Python bindings for the Open vSwitch database
 
 %prep
 %autosetup -p1 
+%ifarch loongarch64
+%_update_config_guess
+%_update_config_sub
+%endif
 
 %build
 autoreconf
@@ -285,6 +289,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Wed Jan 11 2023 huajingyun <huajingyun@loongson.cn> - 2.12.4-3
+- update config.sub and config.guess for loongarch64
+
 * Thu Dec 29 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-2
 - fix CVE-2022-4338
 
