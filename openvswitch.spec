@@ -1,4 +1,4 @@
-%bcond_with dpdk
+%bcond_without dpdk
 
 %ifarch x86_64
 %bcond_without check
@@ -13,7 +13,7 @@ Name: openvswitch
 Summary: Open vSwitch daemon/database/utilities
 URL: https://www.openvswitch.org/
 Version: 2.17.5
-Release: 1
+Release: 2
 License: ASL 2.0 and LGPLv2+ and SISSL
 
 Source0: https://www.openvswitch.org/releases/%{name}-%{version}.tar.gz
@@ -47,9 +47,6 @@ BuildRequires: dpdk-devel libpcap-devel numactl-devel
 %endif
 
 Requires: openssl iproute module-init-tools
-
-%{?systemd_requires}
-%{?sysusers_requires_compat}
 
 Requires(post): /bin/sed
 Requires(post): %{_sbindir}/update-alternatives
@@ -307,6 +304,13 @@ done
 %endif
 
 %pre
+if ! getent group openvswith > /dev/null; then
+    groupadd --system openvswith
+fi
+
+if ! getent passwd openvswith > /dev/null; then
+    useradd --system -g openvswith openvswith
+fi
 
 %post
 %{_sbindir}/update-alternatives --install %{_sbindir}/ovs-vswitchd \
@@ -315,10 +319,11 @@ if [ $1 -eq 1 ]; then
     sed -i 's:^#OVS_USER_ID=:OVS_USER_ID=:' /etc/sysconfig/openvswitch
 
     sed -i \
-        's@OVS_USER_ID="openvswitch:openvswitch"@OVS_USER_ID="openvswitch:hugetlbfs"@'\
+        's@OVS_USER_ID="openvswitch:openvswitch"@OVS_USER_ID="root:root"@'\
         /etc/sysconfig/openvswitch
 fi
 chown -R openvswitch:openvswitch /etc/openvswitch
+sed -i '/^\[Service\]/ a\Slice=system-ovs.slice' /usr/lib/systemd/system/ovs-vswitchd.service
 
 %if 0%{?systemd_post:1}
     %systemd_post %{name}.service
@@ -448,6 +453,12 @@ fi
 %{_sysusersdir}/openvswitch.conf
 
 %changelog
+* Mon Mar 20 2023 xulei <xulei@xfusion.com> - 2.17.5-2
+- enhance some behavior: 
+  1、add control group system-ovs.slice
+  2、OVS_USER_ID change to root:root
+  3、add user group openvswith and user openvswith
+
 * Tue Jan 03 2023 wanglimin <wanglimin@xfusion.com> - 2.17.5-1
 - upgrade to 2.17.5-1
 
