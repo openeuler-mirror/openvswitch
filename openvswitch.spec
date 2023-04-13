@@ -3,12 +3,13 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.4
 License:        ASL 2.0 and ISC
-Release:        3
+Release:        4
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Patch0001:      0001-Remove-unsupported-permission-names.patch
 Patch0002:	backport-CVE-2022-4338.patch
+Patch0003:	backport-CVE-2023-1668.patch
 
 Requires:       %{name}-help
 Requires:       logrotate hostname python >= 2.7 python2-six selinux-policy-targeted libsepol >= 3.1
@@ -281,6 +282,9 @@ exit 0
 %doc LICENSE
 
 %changelog
+* Thu Apr 13 2023 zhangpan <zhangpan103@h-partners.com> - 2.12.4-4
+- fix CVE-2023-1668
+
 * Thu Dec 29 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-3
 - fix CVE-2022-4338
 
