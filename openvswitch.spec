@@ -13,7 +13,7 @@ Name: openvswitch
 Summary: Open vSwitch daemon/database/utilities
 URL: https://www.openvswitch.org/
 Version: 2.17.5
-Release: 2
+Release: 3
 License: ASL 2.0 and LGPLv2+ and SISSL
 
 Source0: https://www.openvswitch.org/releases/%{name}-%{version}.tar.gz
@@ -22,6 +22,7 @@ Source1: openvswitch.sysusers
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
 Patch0002:      0002-Remove-unsupported-permission-names.patch
 Patch0003:      fix-selinux-err.patch
+Patch6000:      backport-CVE-2023-1668.patch
 
 BuildRequires: gcc gcc-c++ make
 BuildRequires: autoconf automake libtool
@@ -453,6 +454,9 @@ fi
 %{_sysusersdir}/openvswitch.conf
 
 %changelog
+* Wed Apr 12 2023 zhangpan <zhangpan103@h-partners.com> - 2.17.5-3
+- fix CVE-2023-1668
+
 * Mon Mar 20 2023 xulei <xulei@xfusion.com> - 2.17.5-2
 - enhance some behavior: 
   1、add control group system-ovs.slice
