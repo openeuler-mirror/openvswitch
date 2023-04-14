@@ -3,7 +3,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.4
 License:        ASL 2.0 and ISC
-Release:        4
+Release:        5
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -284,6 +284,9 @@ exit 0
 %doc LICENSE
 
 %changelog
+* Fri Apr 14 2023 zhangpan <zhangpan103@h-partners.com> - 2.12.4-5
+- fix changelog date error
+
 * Thu Apr 13 2023 zhangpan <zhangpan103@h-partners.com> - 2.12.4-4
 - fix CVE-2023-1668
 
@@ -314,7 +317,7 @@ exit 0
 * Thu Dec 02 2021 wulei <wulei80@huawei.com> - 2.12.0-15
 - Rectify the failure to start openvswitch-ipesc and ovn-controller-vtep services
 
-* Thu Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-14
+* Mon Oct 18 2021 yangcheng <yangcheng87@huawei.com> - 2.12.0-14
 - Type:bugfix
 - ID:NA
 - SUG:NA
