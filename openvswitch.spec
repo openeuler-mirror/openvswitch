@@ -6,7 +6,7 @@ Summary:        Production Quality, Multilayer Open Virtual Switch
 URL:            http://www.openvswitch.org/
 Version:        2.12.4
 License:        ASL 2.0 and ISC
-Release:        2
+Release:        3
 Source:         https://www.openvswitch.org/releases/openvswitch-%{version}.tar.gz
 Buildroot:      /tmp/openvswitch-rpm
 Patch0000:      0000-openvswitch-add-stack-protector-strong.patch
@@ -57,6 +57,11 @@ Python bindings for the Open vSwitch database
 %autosetup -p1 
 
 %build
+%if "%toolchain" == "clang"
+	%define config_cflags CFLAGS="-U_FORTIFY_SOURCE"
+%else
+	%define config_cflags
+%endif
 autoreconf
 ./configure \
         --prefix=/usr \
@@ -66,7 +71,8 @@ autoreconf
         --enable-ssl \
         --enable-shared \
         --with-pkidir=%{_sharedstatedir}/openvswitch/pki \
-        PYTHON=%{__python3}
+        PYTHON=%{__python3} \
+				%{config_cflags}
 
 sed -i '1s/python/python3/g' build-aux/dpdkstrip.py
 
@@ -285,6 +291,9 @@ exit 0
 %doc README.rst NEWS rhel/README.RHEL.rst
 
 %changelog
+* Sat May 06 2023 yoo <sunyuechi@iscas.ac.cn> - 2.12.4-3
+- fix clang build error
+
 * Thu Dec 29 2022 zhouwenpei <zhouwenpei1@h-pattners.com> - 2.12.4-2
 - fix CVE-2022-4338
 
